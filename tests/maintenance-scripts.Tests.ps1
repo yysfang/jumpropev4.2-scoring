@@ -184,6 +184,70 @@ node.addEventListener('input', noop);
         (Invoke-ProjectScript $projectPath 'verify-project.ps1' @{ Version = '1.1' }).ExitCode | Should Not Be 0
     }
 
+    It 'rejects required code that exists only in a script inside a style raw-text element' {
+        $projectPath = New-IsolatedProject
+        $sourcePath = Join-Path $projectPath 'scoring-calculator.html'
+        $content = (Get-Content -LiteralPath $sourcePath -Raw) -replace 'function calculate\(', 'function removedCalculate(' -replace "addEventListener\('input'", "addEventListener('keyup'"
+        $styleScript = @'
+<style>
+<script>
+function calculate() {}
+node.addEventListener('input', noop);
+</script>
+</style>
+'@
+        Set-Content -LiteralPath $sourcePath -Value ($content + "`n" + $styleScript)
+        Sync-ProjectHtml $projectPath
+        (Invoke-ProjectScript $projectPath 'verify-project.ps1' @{ Version = '1.1' }).ExitCode | Should Not Be 0
+    }
+
+    It 'rejects required code that exists only in a script inside a noscript element' {
+        $projectPath = New-IsolatedProject
+        $sourcePath = Join-Path $projectPath 'scoring-calculator.html'
+        $content = (Get-Content -LiteralPath $sourcePath -Raw) -replace 'function calculate\(', 'function removedCalculate(' -replace "addEventListener\('input'", "addEventListener('keyup'"
+        $noScriptBody = @'
+<noscript>
+<script>
+function calculate() {}
+node.addEventListener('input', noop);
+</script>
+</noscript>
+'@
+        Set-Content -LiteralPath $sourcePath -Value ($content + "`n" + $noScriptBody)
+        Sync-ProjectHtml $projectPath
+        (Invoke-ProjectScript $projectPath 'verify-project.ps1' @{ Version = '1.1' }).ExitCode | Should Not Be 0
+    }
+
+    It 'rejects required code that exists only in a classic nomodule script' {
+        $projectPath = New-IsolatedProject
+        $sourcePath = Join-Path $projectPath 'scoring-calculator.html'
+        $content = (Get-Content -LiteralPath $sourcePath -Raw) -replace 'function calculate\(', 'function removedCalculate(' -replace "addEventListener\('input'", "addEventListener('keyup'"
+        $noModuleScript = @'
+<script nomodule>
+function calculate() {}
+node.addEventListener('input', noop);
+</script>
+'@
+        Set-Content -LiteralPath $sourcePath -Value ($content + "`n" + $noModuleScript)
+        Sync-ProjectHtml $projectPath
+        (Invoke-ProjectScript $projectPath 'verify-project.ps1' @{ Version = '1.1' }).ExitCode | Should Not Be 0
+    }
+
+    It 'rejects required code that exists only in the ignored body of a script with src' {
+        $projectPath = New-IsolatedProject
+        $sourcePath = Join-Path $projectPath 'scoring-calculator.html'
+        $content = (Get-Content -LiteralPath $sourcePath -Raw) -replace 'function calculate\(', 'function removedCalculate(' -replace "addEventListener\('input'", "addEventListener('keyup'"
+        $externalScriptBody = @'
+<script src="missing.js">
+function calculate() {}
+node.addEventListener('input', noop);
+</script>
+'@
+        Set-Content -LiteralPath $sourcePath -Value ($content + "`n" + $externalScriptBody)
+        Sync-ProjectHtml $projectPath
+        (Invoke-ProjectScript $projectPath 'verify-project.ps1' @{ Version = '1.1' }).ExitCode | Should Not Be 0
+    }
+
     It 'does not treat data-type as the script type attribute' {
         $projectPath = New-IsolatedProject
         $sourcePath = Join-Path $projectPath 'scoring-calculator.html'
@@ -282,6 +346,23 @@ function calculate(
         Test-Path -LiteralPath (Join-Path $projectPath 'versions\scoring-calculator-vbad.html') | Should Be $false
     }
 
+    It 'rejects non-ASCII digits in a verification version' {
+        $projectPath = New-IsolatedProject
+        $unicodeVersion = '١.١'
+        Copy-Item -LiteralPath (Join-Path $projectPath 'scoring-calculator.html') -Destination (Join-Path $projectPath "versions\scoring-calculator-v$unicodeVersion.html")
+        (Invoke-ProjectScript $projectPath 'verify-project.ps1' @{ Version = $unicodeVersion }).ExitCode | Should Not Be 0
+    }
+
+    It 'rejects non-ASCII digits in a release version without changing files' {
+        $projectPath = New-IsolatedProject
+        $unicodeVersion = '١.٢'
+        $releasePath = Join-Path $projectPath 'docs\index.html'
+        $beforeHash = (Get-FileHash -LiteralPath $releasePath -Algorithm SHA256).Hash
+        (Invoke-ProjectScript $projectPath 'new-release.ps1' @{ Version = $unicodeVersion }).ExitCode | Should Not Be 0
+        (Get-FileHash -LiteralPath $releasePath -Algorithm SHA256).Hash | Should Be $beforeHash
+        Test-Path -LiteralPath (Join-Path $projectPath "versions\scoring-calculator-v$unicodeVersion.html") | Should Be $false
+    }
+
     It 'rejects a duplicate version without changing the release page or snapshot' {
         $projectPath = New-IsolatedProject
         $releasePath = Join-Path $projectPath 'docs\index.html'
@@ -303,6 +384,62 @@ function calculate(
         $result = Invoke-ProjectScript $projectPath 'new-release.ps1' @{ Version = '1.2' }
         $result.ExitCode | Should Not Be 0
         (Get-FileHash -LiteralPath $releasePath -Algorithm SHA256).Hash | Should Be $beforeHash
+        Test-Path -LiteralPath (Join-Path $projectPath 'versions\scoring-calculator-v1.2.html') | Should Be $false
+    }
+
+    It 'restores the previous release after verification fails post-replacement' {
+        $projectPath = New-IsolatedProject
+        $releasePath = Join-Path $projectPath 'docs\index.html'
+        Add-Content -LiteralPath $releasePath -Value '<!-- previous released page -->'
+        $beforeHash = (Get-FileHash -LiteralPath $releasePath -Algorithm SHA256).Hash
+        Set-Content -LiteralPath (Join-Path $projectPath '.gitignore') -Value "# .workbuddy/`n打分记录/`n.worktrees/"
+
+        $result = Invoke-ProjectScript $projectPath 'new-release.ps1' @{ Version = '1.2' }
+
+        $result.ExitCode | Should Not Be 0
+        (Get-FileHash -LiteralPath $releasePath -Algorithm SHA256).Hash | Should Be $beforeHash
+        Test-Path -LiteralPath (Join-Path $projectPath 'versions\scoring-calculator-v1.2.html') | Should Be $false
+        @(Get-ChildItem -LiteralPath (Join-Path $projectPath 'docs') -Filter '.index.html.*.tmp').Count | Should Be 0
+    }
+
+    It 'preserves and reports the recovery backup when restoring the release fails' {
+        $projectPath = New-IsolatedProject
+        $releasePath = Join-Path $projectPath 'docs\index.html'
+        Add-Content -LiteralPath $releasePath -Value '<!-- recovery copy -->'
+        $beforeHash = (Get-FileHash -LiteralPath $releasePath -Algorithm SHA256).Hash
+        $lockingVerifier = @'
+[CmdletBinding()]
+param([Parameter(Mandatory = $true)][string]$Version)
+$repositoryRoot = Split-Path -LiteralPath $PSScriptRoot
+$releasePath = Join-Path $repositoryRoot 'docs\index.html'
+$global:IjruMaintenanceRollbackLock = [System.IO.File]::Open($releasePath, [System.IO.FileMode]::Open, [System.IO.FileAccess]::ReadWrite, [System.IO.FileShare]::None)
+[Console]::Error.WriteLine('Forced verification failure while the release page is locked.')
+exit 1
+'@
+        Set-Content -LiteralPath (Join-Path $projectPath 'scripts\verify-project.ps1') -Value $lockingVerifier
+        $result = $null
+        $invocationError = $null
+        try {
+            $result = Invoke-ProjectScript $projectPath 'new-release.ps1' @{ Version = '1.2' }
+        } catch {
+            $invocationError = $_
+        } finally {
+            if ($global:IjruMaintenanceRollbackLock) {
+                $global:IjruMaintenanceRollbackLock.Dispose()
+                Remove-Variable -Name IjruMaintenanceRollbackLock -Scope Global
+            }
+        }
+
+        $recoveryBackups = @(Get-ChildItem -LiteralPath (Join-Path $projectPath 'docs') -Filter '.index.html.*.tmp')
+        $recoveryBackups.Count | Should Be 1
+        (Get-FileHash -LiteralPath $recoveryBackups[0].FullName -Algorithm SHA256).Hash | Should Be $beforeHash
+        $invocationError | Should Be $null
+        $result.ExitCode | Should Not Be 0
+        $recoveryOutput = @($result.Output | Where-Object { $_ -like 'RecoveryBackupPath=*' })
+        $recoveryOutput.Count | Should Be 1
+        $reportedRecoveryPath = $recoveryOutput[0].Substring('RecoveryBackupPath='.Length)
+        [System.IO.Path]::IsPathFullyQualified($reportedRecoveryPath) | Should Be $true
+        $reportedRecoveryPath | Should Be $recoveryBackups[0].FullName
         Test-Path -LiteralPath (Join-Path $projectPath 'versions\scoring-calculator-v1.2.html') | Should Be $false
     }
 
@@ -351,17 +488,23 @@ function calculate(
         $projectPath = New-IsolatedProject -WithCommit
         $destinationPath = Join-Path $TestDrive ("verify-failure-" + [guid]::NewGuid().ToString('N'))
         $shimPath = Join-Path $TestDrive ("git-shim-" + [guid]::NewGuid().ToString('N'))
+        $shimLogPath = Join-Path $shimPath 'calls.log'
         New-Item -ItemType Directory -Path $destinationPath, $shimPath -Force | Out-Null
-        $shimContents = @'
+        $gitExecutable = (@(Get-Command git -CommandType Application -ErrorAction Stop)[0]).Source.Replace('%', '%%')
+        $shimContents = @"
 @echo off
+echo %*>>"$shimLogPath"
 if /I "%1 %2"=="bundle verify" exit /b 1
-"C:\Program Files\Git\cmd\git.exe" %*
-'@
+"$gitExecutable" %*
+"@
         Set-Content -LiteralPath (Join-Path $shimPath 'git.cmd') -Value $shimContents
         $originalPath = $env:PATH
         try { $env:PATH = "$shimPath;$originalPath"; $result = Invoke-ProjectScript $projectPath 'backup-repo.ps1' @{ Destination = $destinationPath } } finally { $env:PATH = $originalPath }
         $result.ExitCode | Should Not Be 0
         @(Get-ChildItem -LiteralPath $destinationPath -File).Count | Should Be 0
+        $shimCalls = @(Get-Content -LiteralPath $shimLogPath)
+        @($shimCalls | Where-Object { $_ -like 'bundle create *' }).Count | Should Be 1
+        @($shimCalls | Where-Object { $_ -like 'bundle verify *' }).Count | Should Be 1
     }
 
     It 'refuses privacy paths present in another Git ref history' {

@@ -1,6 +1,6 @@
 # IJRU Rules 计分系统
 
-这是一个基于 IJRU V4.2 规则的静态网页计分器。项目不需要安装依赖：用浏览器直接打开 HTML 文件即可使用；发布时将静态文件部署到网站托管服务即可。
+这是一个基于 IJRU v4.2.0 规则的静态网页计分器。项目不需要安装依赖：用浏览器直接打开 HTML 文件即可使用；发布时将静态文件部署到网站托管服务即可。
 
 ## 文件角色
 
@@ -16,10 +16,10 @@
 
 ## 版本区别
 
-- 当前计分器的发布版本为 **v1.1**，计分规则版本为 **V4.2.0**。
+- 当前计分器的发布版本为 **v1.1**，计分规则版本为 **v4.2.0**。
 - 根目录的 `scoring-calculator.html` 是当前本地维护版本；`docs/index.html` 是与其对应的网站发布入口。准备发布 v1.1 的后续维护版本前，应先确认两个入口包含同一份准备上线的内容。
 - `versions/scoring-calculator-v1.0.html` 和 `versions/scoring-calculator-v1.1.html` 是历史快照，不应当作日常编辑入口。
-- 规则资料标注为 V4.2.0；修改计分逻辑时先核对相应规则资料，再更新当前维护版本。
+- 规则资料标注为 v4.2.0；修改计分逻辑时先核对相应规则资料，再更新当前维护版本。
 
 ## 新手日常工作流
 
@@ -47,20 +47,24 @@ git rebase main
 
 ## 发布
 
-发布前在本机打开 `docs/index.html`，检查计分交互、文案和规则版本。发布内容应来自已提交的分支或已确认的 `main`，并保留发布所用提交号，便于追溯。发布后用公开地址做一次基本的页面与交互检查。
+三个本地维护脚本的安全接口如下：
+
+- `scripts/new-release.ps1 -Version <major.minor>`：例如 `.\scripts\new-release.ps1 -Version 1.2`。它会拒绝非法或已存在的版本，再用主文件更新 `docs/index.html` 并创建不覆盖的版本快照，最后自动验证。
+- `scripts/verify-project.ps1 -Version <major.minor>`：例如 `.\scripts\verify-project.ps1 -Version 1.1`。它检查三份 HTML、必需脚本与隐私路径；出现任何错误时返回非零状态。
+- `scripts/backup-repo.ps1 [-Destination <absolute path>]`：默认示例为 `.\scripts\backup-repo.ps1`；自定义时必须使用已存在的绝对目录，例如：
+
+  ```powershell
+  $backupDestination = 'D:\IJRU-backups'
+  New-Item -ItemType Directory -Path $backupDestination -Force
+  .\scripts\backup-repo.ps1 -Destination $backupDestination
+  ```
+
+发布前在本机打开 `docs/index.html`，检查计分交互、文案和规则版本；再运行验证脚本。发布内容应来自已提交的分支或已确认的 `main`，并保留发布所用提交号，便于追溯。这些脚本只更改本地文件或创建本地备份，不会执行 `git push`，也不会改变 GitHub Pages；是否对外部署必须另行决定。
 
 ## 备份与非破坏式回退
 
-- 本地 Git bundle 是代码备份的固定落点，必须写入 `C:\Users\98432\Documents\IJRU-scoring-backups`；不要把远程仓库当作唯一备份。创建备份时仅追加新的 bundle，绝不自动删除旧 bundle：
-
-  ```powershell
-  $backupDir = 'C:\Users\98432\Documents\IJRU-scoring-backups'
-  New-Item -ItemType Directory -Force -Path $backupDir
-  $bundle = Join-Path $backupDir ("ijru-scoring-$(Get-Date -Format 'yyyyMMdd-HHmmss').bundle")
-  git bundle create $bundle --all
-  ```
-
-  定期将该目录复制到另一受控位置；保留目录内的全部旧 bundle，便于恢复到任一备份点。
+- 本地 Git bundle 是代码备份的固定落点，默认写入 `C:\Users\98432\Documents\IJRU-scoring-backups`；不要把远程仓库当作唯一备份。请使用上面的 `backup-repo.ps1`：它会先扫描全部 Git 历史中的隐私路径，拒绝同名时间戳冲突，先生成临时文件再安全提升为最终 bundle，并必须通过 `git bundle verify`。脚本只追加新 bundle，不会删除旧备份。
+- 定期将备份目录复制到另一受控位置；保留目录内的全部旧 bundle，便于恢复到任一备份点。
 - 个人计分记录另行备份到受控的本地或云端位置，且不要把它们提交到本仓库。
 - 在尝试较大修改前先提交一个可说明的检查点，或创建分支；不要直接覆盖现有文件。
 - 需要查看旧版本时使用 `git log --oneline`、`git show <提交号> -- <文件>` 或 `versions/` 中的快照。

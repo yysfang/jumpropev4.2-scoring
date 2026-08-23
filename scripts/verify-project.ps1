@@ -87,11 +87,35 @@ function Read-HtmlTag {
     }
 }
 
+function Find-HtmlEndTag {
+    param([string]$Html, [int]$StartIndex, [string]$TagName)
+
+    $searchIndex = $StartIndex
+    $needle = "</$TagName"
+    while ($searchIndex -lt $Html.Length) {
+        $candidateIndex = $Html.IndexOf($needle, $searchIndex, [System.StringComparison]::OrdinalIgnoreCase)
+        if ($candidateIndex -lt 0) { return $null }
+        $afterName = $candidateIndex + $needle.Length
+        if ($afterName -ge $Html.Length -or (Test-HtmlWhitespace $Html[$afterName]) -or $Html[$afterName] -eq '/' -or $Html[$afterName] -eq '>') {
+            $candidateTag = Read-HtmlTag -Html $Html -StartIndex $candidateIndex
+            if ($candidateTag -and $candidateTag.IsEndTag -and $candidateTag.Name -eq $TagName) {
+                return [pscustomobject]@{
+                    StartIndex = $candidateIndex
+                    Tag = $candidateTag
+                }
+            }
+        }
+        $searchIndex = $candidateIndex + 2
+    }
+    return $null
+}
+
 function Get-HtmlScriptElements {
     param([string]$Html)
 
     $index = 0
     $templateDepth = 0
+    $rawTextElements = @('style', 'xmp', 'iframe', 'noembed', 'noframes', 'textarea', 'title', 'noscript')
     while ($index -lt $Html.Length) {
         if ($Html[$index] -ne '<') { $index++; continue }
         if ($index + 3 -lt $Html.Length -and $Html.Substring($index, 4) -eq '<!--') {
@@ -111,33 +135,27 @@ function Get-HtmlScriptElements {
             $templateDepth++
             continue
         }
+        if ($tag.Name -eq 'plaintext') {
+            $index = $Html.Length
+            continue
+        }
+        if ($tag.Name -in $rawTextElements) {
+            $rawTextEnd = Find-HtmlEndTag -Html $Html -StartIndex $tag.EndIndex -TagName $tag.Name
+            $index = if ($rawTextEnd) { $rawTextEnd.Tag.EndIndex } else { $Html.Length }
+            continue
+        }
         if ($tag.Name -ne 'script') { continue }
 
         $bodyStart = $tag.EndIndex
-        $endTag = $null
-        $searchIndex = $bodyStart
-        while ($searchIndex -lt $Html.Length) {
-            $candidateIndex = $Html.IndexOf('</script', $searchIndex, [System.StringComparison]::OrdinalIgnoreCase)
-            if ($candidateIndex -lt 0) { break }
-            $afterName = $candidateIndex + 8
-            if ($afterName -ge $Html.Length -or (Test-HtmlWhitespace $Html[$afterName]) -or $Html[$afterName] -eq '/' -or $Html[$afterName] -eq '>') {
-                $candidateTag = Read-HtmlTag -Html $Html -StartIndex $candidateIndex
-                if ($candidateTag -and $candidateTag.IsEndTag -and $candidateTag.Name -eq 'script') {
-                    $endTag = $candidateTag
-                    break
-                }
-            }
-            $searchIndex = $candidateIndex + 2
-        }
-
-        $bodyEnd = if ($endTag) { $candidateIndex } else { $Html.Length }
+        $scriptEnd = Find-HtmlEndTag -Html $Html -StartIndex $bodyStart -TagName 'script'
+        $bodyEnd = if ($scriptEnd) { $scriptEnd.StartIndex } else { $Html.Length }
         if ($templateDepth -eq 0) {
             [pscustomobject]@{
                 Attributes = $tag.Attributes
                 Body = $Html.Substring($bodyStart, $bodyEnd - $bodyStart)
             }
         }
-        $index = if ($endTag) { $endTag.EndIndex } else { $Html.Length }
+        $index = if ($scriptEnd) { $scriptEnd.Tag.EndIndex } else { $Html.Length }
     }
 }
 
@@ -148,6 +166,8 @@ function Get-ExecutableJavaScript {
     foreach ($script in @(Get-HtmlScriptElements -Html $Html)) {
         $scriptType = if ($script.Attributes.ContainsKey('type')) { $script.Attributes['type'].Trim().ToLowerInvariant() } else { '' }
         if ($scriptType -and $scriptType -notin @('text/javascript', 'application/javascript', 'application/ecmascript', 'text/ecmascript', 'module')) { continue }
+        if ($script.Attributes.ContainsKey('src')) { continue }
+        if ($scriptType -ne 'module' -and $script.Attributes.ContainsKey('nomodule')) { continue }
 
         $body = $script.Body
         $state = 'code'
@@ -203,7 +223,7 @@ function Get-ExecutableJavaScript {
     return $result.ToString()
 }
 
-if ($Version -notmatch '^\d+\.\d+$') { Fail-Verification "Version must use major.minor format: $Version" }
+if ($Version -notmatch '^[0-9]+\.[0-9]+$') { Fail-Verification "Version must use major.minor format: $Version" }
 
 $gitRepositoryRoot = Split-Path -LiteralPath $PSScriptRoot
 $repositoryRoot = $gitRepositoryRoot

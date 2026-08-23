@@ -16,7 +16,7 @@ function New-AdjacentTemporaryPath {
     return Join-Path $directory (".$leaf." + [guid]::NewGuid().ToString('N') + '.tmp')
 }
 
-if ($Version -notmatch '^\d+\.\d+$') { Fail-Release "Version must use major.minor format: $Version" }
+if ($Version -notmatch '^[0-9]+\.[0-9]+$') { Fail-Release "Version must use major.minor format: $Version" }
 
 $repositoryRoot = Split-Path -LiteralPath $PSScriptRoot
 $sourcePath = Join-Path $repositoryRoot 'scoring-calculator.html'
@@ -33,14 +33,11 @@ $releaseCandidatePath = New-AdjacentTemporaryPath $releasePath
 $snapshotCandidatePath = New-AdjacentTemporaryPath $snapshotPath
 $releaseReplaced = $false
 $snapshotCreated = $false
+$releaseBackupCreated = $false
+$preserveReleaseBackup = $false
 try {
-    $candidateContent = Get-Content -LiteralPath $sourcePath -Raw
-    foreach ($candidatePattern in @('(?m)^[\t ]*function\s+calculate\s*\(', '(?m)^[\t ]*function\s+switchEvent\s*\(', 'addEventListener\s*\(\s*[''" ]click[''" ]', 'addEventListener\s*\(\s*[''" ]input[''" ]')) {
-        if ($candidateContent -notmatch $candidatePattern) { throw 'Release candidate is missing a required function or event.' }
-    }
-    if ($candidateContent -match '(?m)^[\t ]*<<<<<<<[^\r\n]*\r?$' -or $candidateContent -match '(?m)^[\t ]*=======[\t ]*\r?$' -or $candidateContent -match '(?m)^[\t ]*>>>>>>>[^\r\n]*\r?$') { throw 'Release candidate contains a Git conflict marker.' }
-
     Copy-Item -LiteralPath $releasePath -Destination $releaseBackupPath -ErrorAction Stop
+    $releaseBackupCreated = $true
     Copy-Item -LiteralPath $sourcePath -Destination $releaseCandidatePath -ErrorAction Stop
     Copy-Item -LiteralPath $sourcePath -Destination $snapshotCandidatePath -ErrorAction Stop
 
@@ -53,21 +50,44 @@ try {
     if ($LASTEXITCODE -ne 0) { throw 'Release verification failed.' }
 
     Remove-Item -LiteralPath $releaseBackupPath -Force -ErrorAction Stop
+    $releaseBackupCreated = $false
     Write-Host "Release v$Version created and verified."
     exit 0
 }
 catch {
-    if ($releaseReplaced -and (Test-Path -LiteralPath $releaseBackupPath)) {
-        Copy-Item -LiteralPath $releaseBackupPath -Destination $releasePath -Force
+    $releaseFailureMessage = $_.Exception.Message
+    $rollbackFailureMessage = $null
+    if ($releaseReplaced -and $releaseBackupCreated -and (Test-Path -LiteralPath $releaseBackupPath)) {
+        try {
+            Copy-Item -LiteralPath $releaseBackupPath -Destination $releasePath -Force -ErrorAction Stop
+            $releaseReplaced = $false
+        } catch {
+            $rollbackFailureMessage = $_.Exception.Message
+            $preserveReleaseBackup = $true
+        }
     }
     if ($snapshotCreated -and (Test-Path -LiteralPath $snapshotPath)) {
-        Remove-Item -LiteralPath $snapshotPath -Force
+        try {
+            Remove-Item -LiteralPath $snapshotPath -Force -ErrorAction Stop
+            $snapshotCreated = $false
+        } catch {
+            if (-not $rollbackFailureMessage) { $rollbackFailureMessage = $_.Exception.Message }
+        }
     }
-    [Console]::Error.WriteLine($_.Exception.Message)
+    if ($preserveReleaseBackup) {
+        $absoluteRecoveryBackupPath = [System.IO.Path]::GetFullPath($releaseBackupPath)
+        Write-Output "RecoveryBackupPath=$absoluteRecoveryBackupPath"
+        [Console]::Error.WriteLine("$releaseFailureMessage Rollback failed: $rollbackFailureMessage Recovery backup preserved at: $absoluteRecoveryBackupPath")
+    } else {
+        [Console]::Error.WriteLine($releaseFailureMessage)
+    }
     exit 1
 }
 finally {
-    foreach ($temporaryPath in @($releaseBackupPath, $releaseCandidatePath, $snapshotCandidatePath)) {
+    foreach ($temporaryPath in @($releaseCandidatePath, $snapshotCandidatePath)) {
         if (Test-Path -LiteralPath $temporaryPath) { Remove-Item -LiteralPath $temporaryPath -Force }
+    }
+    if ($releaseBackupCreated -and -not $preserveReleaseBackup -and (Test-Path -LiteralPath $releaseBackupPath)) {
+        Remove-Item -LiteralPath $releaseBackupPath -Force
     }
 }
