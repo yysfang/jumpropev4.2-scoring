@@ -31,34 +31,26 @@ if (Test-Path -LiteralPath $snapshotPath) { Fail-Release "Release version alread
 $releaseBackupPath = New-AdjacentTemporaryPath $releasePath
 $releaseCandidatePath = New-AdjacentTemporaryPath $releasePath
 $snapshotCandidatePath = New-AdjacentTemporaryPath $snapshotPath
-$stageRoot = Join-Path $repositoryRoot (".release-stage-" + [guid]::NewGuid().ToString('N'))
 $releaseReplaced = $false
 $snapshotCreated = $false
 try {
-    [System.IO.Directory]::CreateDirectory((Join-Path $stageRoot 'docs')) | Out-Null
-    [System.IO.Directory]::CreateDirectory((Join-Path $stageRoot 'versions')) | Out-Null
-    Copy-Item -LiteralPath $sourcePath -Destination (Join-Path $stageRoot 'scoring-calculator.html') -ErrorAction Stop
-    Copy-Item -LiteralPath $sourcePath -Destination (Join-Path $stageRoot 'docs\index.html') -ErrorAction Stop
-    Copy-Item -LiteralPath $sourcePath -Destination (Join-Path $stageRoot ("versions\scoring-calculator-v$Version.html")) -ErrorAction Stop
-
-    $previousContentRoot = $env:IJRU_VERIFY_CONTENT_ROOT
-    try {
-        $env:IJRU_VERIFY_CONTENT_ROOT = $stageRoot
-        & $verificationScript -Version $Version
-        if ($LASTEXITCODE -ne 0) { throw 'Release candidate verification failed.' }
+    $candidateContent = Get-Content -LiteralPath $sourcePath -Raw
+    foreach ($candidatePattern in @('(?m)^[\t ]*function\s+calculate\s*\(', '(?m)^[\t ]*function\s+switchEvent\s*\(', 'addEventListener\s*\(\s*[''" ]click[''" ]', 'addEventListener\s*\(\s*[''" ]input[''" ]')) {
+        if ($candidateContent -notmatch $candidatePattern) { throw 'Release candidate is missing a required function or event.' }
     }
-    finally {
-        $env:IJRU_VERIFY_CONTENT_ROOT = $previousContentRoot
-    }
+    if ($candidateContent -match '(?m)^[\t ]*<<<<<<<[^\r\n]*\r?$' -or $candidateContent -match '(?m)^[\t ]*=======[\t ]*\r?$' -or $candidateContent -match '(?m)^[\t ]*>>>>>>>[^\r\n]*\r?$') { throw 'Release candidate contains a Git conflict marker.' }
 
     Copy-Item -LiteralPath $releasePath -Destination $releaseBackupPath -ErrorAction Stop
-    Copy-Item -LiteralPath (Join-Path $stageRoot 'docs\index.html') -Destination $releaseCandidatePath -ErrorAction Stop
-    Copy-Item -LiteralPath (Join-Path $stageRoot ("versions\scoring-calculator-v$Version.html")) -Destination $snapshotCandidatePath -ErrorAction Stop
+    Copy-Item -LiteralPath $sourcePath -Destination $releaseCandidatePath -ErrorAction Stop
+    Copy-Item -LiteralPath $sourcePath -Destination $snapshotCandidatePath -ErrorAction Stop
 
     Move-Item -LiteralPath $releaseCandidatePath -Destination $releasePath -Force -ErrorAction Stop
     $releaseReplaced = $true
     Move-Item -LiteralPath $snapshotCandidatePath -Destination $snapshotPath -ErrorAction Stop
     $snapshotCreated = $true
+
+    & $verificationScript -Version $Version
+    if ($LASTEXITCODE -ne 0) { throw 'Release verification failed.' }
 
     Remove-Item -LiteralPath $releaseBackupPath -Force -ErrorAction Stop
     Write-Host "Release v$Version created and verified."
@@ -78,5 +70,4 @@ finally {
     foreach ($temporaryPath in @($releaseBackupPath, $releaseCandidatePath, $snapshotCandidatePath)) {
         if (Test-Path -LiteralPath $temporaryPath) { Remove-Item -LiteralPath $temporaryPath -Force }
     }
-    if (Test-Path -LiteralPath $stageRoot) { Remove-Item -LiteralPath $stageRoot -Recurse -Force }
 }

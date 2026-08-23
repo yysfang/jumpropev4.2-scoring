@@ -16,14 +16,24 @@ function Test-PrivacyPath {
            $Path -eq '.worktrees' -or $Path -like '.worktrees/*'
 }
 
+function Get-ExecutableJavaScript {
+    param([string]$Html)
+
+    $scriptMatches = [regex]::Matches($Html, '(?is)<script\b[^>]*>(.*?)</script>')
+    $code = [string]::Join("`n", @($scriptMatches | ForEach-Object { $_.Groups[1].Value }))
+    $code = [regex]::Replace($code, 'addEventListener\s*\(\s*[''"]click[''"]', 'addEventListener(__IJRU_CLICK__)')
+    $code = [regex]::Replace($code, 'addEventListener\s*\(\s*[''"]input[''"]', 'addEventListener(__IJRU_INPUT__)')
+    $code = [regex]::Replace($code, '(?s)`(?:\\.|[^`\\])*`', '')
+    $code = [regex]::Replace($code, "(?s)'(?:\\.|[^'\\])*'", '')
+    $code = [regex]::Replace($code, '(?s)"(?:\\.|[^"\\])*"', '')
+    $code = [regex]::Replace($code, '(?s)/\*.*?\*/', '')
+    return [regex]::Replace($code, '(?m)//[^\r\n]*', '')
+}
+
 if ($Version -notmatch '^\d+\.\d+$') { Fail-Verification "Version must use major.minor format: $Version" }
 
 $gitRepositoryRoot = Split-Path -LiteralPath $PSScriptRoot
 $repositoryRoot = $gitRepositoryRoot
-if (-not [string]::IsNullOrWhiteSpace($env:IJRU_VERIFY_CONTENT_ROOT)) {
-    if (-not (Test-Path -LiteralPath $env:IJRU_VERIFY_CONTENT_ROOT -PathType Container)) { Fail-Verification 'Verification content root does not exist.' }
-    $repositoryRoot = (Resolve-Path -LiteralPath $env:IJRU_VERIFY_CONTENT_ROOT).Path
-}
 $sourcePath = Join-Path $repositoryRoot 'scoring-calculator.html'
 $releasePath = Join-Path $repositoryRoot 'docs\index.html'
 $snapshotPath = Join-Path $repositoryRoot ("versions\scoring-calculator-v$Version.html")
@@ -43,18 +53,19 @@ $requiredPatterns = @(
     '(?m)^[\t ]*function\s+calcSRQ\s*\(',
     '(?m)^[\t ]*function\s+calculate\s*\(',
     '(?m)^[\t ]*function\s+switchEvent\s*\(',
-    'addEventListener\s*\(\s*[''"]click[''"]',
-    'addEventListener\s*\(\s*[''"]input[''"]'
+    'addEventListener\s*\(\s*__IJRU_CLICK__',
+    'addEventListener\s*\(\s*__IJRU_INPUT__'
 )
 foreach ($htmlPath in $htmlPaths) {
     $content = Get-Content -LiteralPath $htmlPath -Raw
+    $code = Get-ExecutableJavaScript $content
     foreach ($requiredPattern in $requiredPatterns) {
-        if ($content -notmatch $requiredPattern) { Fail-Verification "Required event or core function is missing from: $htmlPath" }
+        if ($code -notmatch $requiredPattern) { Fail-Verification "Required event or core function is missing from: $htmlPath" }
     }
     $hasConflictStart = $content -match '(?m)^[\t ]*<<<<<<<[^\r\n]*\r?$'
     $hasConflictSeparator = $content -match '(?m)^[\t ]*=======[\t ]*\r?$'
     $hasConflictEnd = $content -match '(?m)^[\t ]*>>>>>>>[^\r\n]*\r?$'
-    if ($hasConflictStart -and $hasConflictSeparator -and $hasConflictEnd) { Fail-Verification "Git merge conflict marker found in: $htmlPath" }
+    if ($hasConflictStart -or $hasConflictSeparator -or $hasConflictEnd) { Fail-Verification "Git merge conflict marker found in: $htmlPath" }
 }
 
 Push-Location -LiteralPath $gitRepositoryRoot

@@ -31,7 +31,7 @@ if (Test-Path -LiteralPath $bundlePath) { Fail-Backup "Backup already exists and
 
 Push-Location -LiteralPath $repositoryRoot
 try {
-    $historyPaths = @(git log --all --format= --name-only)
+    $historyPaths = @(git -c core.quotepath=false log --all --format= --name-only)
     if ($LASTEXITCODE -ne 0) { throw 'Unable to scan Git history for private paths.' }
     foreach ($historyPath in $historyPaths) {
         if (Test-PrivacyPath $historyPath) { throw "Refusing to bundle privacy path in Git history: $historyPath" }
