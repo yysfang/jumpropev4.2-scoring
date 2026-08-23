@@ -19,15 +19,64 @@ function Test-PrivacyPath {
 function Get-ExecutableJavaScript {
     param([string]$Html)
 
-    $scriptMatches = [regex]::Matches($Html, '(?is)<script\b[^>]*>(.*?)</script>')
-    $code = [string]::Join("`n", @($scriptMatches | ForEach-Object { $_.Groups[1].Value }))
-    $code = [regex]::Replace($code, 'addEventListener\s*\(\s*[''"]click[''"]', 'addEventListener(__IJRU_CLICK__)')
-    $code = [regex]::Replace($code, 'addEventListener\s*\(\s*[''"]input[''"]', 'addEventListener(__IJRU_INPUT__)')
-    $code = [regex]::Replace($code, '(?s)`(?:\\.|[^`\\])*`', '')
-    $code = [regex]::Replace($code, "(?s)'(?:\\.|[^'\\])*'", '')
-    $code = [regex]::Replace($code, '(?s)"(?:\\.|[^"\\])*"', '')
-    $code = [regex]::Replace($code, '(?s)/\*.*?\*/', '')
-    return [regex]::Replace($code, '(?m)//[^\r\n]*', '')
+    $result = New-Object System.Text.StringBuilder
+    foreach ($match in [regex]::Matches($Html, '(?is)<script\b(?<attributes>[^>]*)>(?<body>.*?)</script>')) {
+        $typeMatch = [regex]::Match($match.Groups['attributes'].Value, '(?i)\btype\s*=\s*(?:"(?<value>[^"]*)"|''(?<value>[^'']*)''|(?<value>[^\s>]+))')
+        $scriptType = if ($typeMatch.Success) { $typeMatch.Groups['value'].Value.Trim().ToLowerInvariant() } else { '' }
+        if ($scriptType -and $scriptType -notin @('text/javascript', 'application/javascript', 'application/ecmascript', 'text/ecmascript', 'module')) { continue }
+
+        $body = $match.Groups['body'].Value
+        $state = 'code'
+        $escaped = $false
+        $stringValue = New-Object System.Text.StringBuilder
+        for ($index = 0; $index -lt $body.Length; $index++) {
+            $character = $body[$index]
+            $next = if ($index + 1 -lt $body.Length) { $body[$index + 1] } else { [char]0 }
+            if ($state -eq 'code') {
+                if ($character -eq '/' -and $next -eq '/') { $state = 'line-comment'; $index++; continue }
+                if ($character -eq '/' -and $next -eq '*') { $state = 'block-comment'; $index++; continue }
+                if ($character -eq '<' -and $index + 3 -lt $body.Length -and $body.Substring($index, 4) -eq '<!--') { $state = 'html-comment'; $index += 3; continue }
+                if ($character -eq [char]39) { $state = 'single-string'; $stringValue.Clear() | Out-Null; $escaped = $false; continue }
+                if ($character -eq [char]34) { $state = 'double-string'; $stringValue.Clear() | Out-Null; $escaped = $false; continue }
+                if ($character -eq [char]96) { $state = 'template-string'; $escaped = $false; continue }
+                [void]$result.Append($character)
+                continue
+            }
+            if ($state -eq 'line-comment') {
+                if ($character -eq "`n") { [void]$result.Append("`n"); $state = 'code' }
+                continue
+            }
+            if ($state -eq 'block-comment') {
+                if ($character -eq '*' -and $next -eq '/') { $state = 'code'; $index++; continue }
+                if ($character -eq "`n") { [void]$result.Append("`n") }
+                continue
+            }
+            if ($state -eq 'html-comment') {
+                if ($character -eq '-' -and $index + 2 -lt $body.Length -and $body.Substring($index, 3) -eq '-->') { $state = 'code'; $index += 2; continue }
+                if ($character -eq "`n") { [void]$result.Append("`n") }
+                continue
+            }
+            if ($state -eq 'template-string') {
+                if ($escaped) { $escaped = $false; continue }
+                if ($character -eq [char]92) { $escaped = $true; continue }
+                if ($character -eq [char]96) { $state = 'code'; continue }
+                if ($character -eq "`n") { [void]$result.Append("`n") }
+                continue
+            }
+            if ($escaped) { [void]$stringValue.Append($character); $escaped = $false; continue }
+            if ($character -eq [char]92) { $escaped = $true; continue }
+            if (($state -eq 'single-string' -and $character -eq [char]39) -or ($state -eq 'double-string' -and $character -eq [char]34)) {
+                if ($stringValue.ToString() -eq 'click') { [void]$result.Append('__IJRU_CLICK__') }
+                if ($stringValue.ToString() -eq 'input') { [void]$result.Append('__IJRU_INPUT__') }
+                $state = 'code'
+                continue
+            }
+            if ($character -eq "`n") { [void]$result.Append("`n"); $state = 'code'; continue }
+            [void]$stringValue.Append($character)
+        }
+        [void]$result.Append("`n")
+    }
+    return $result.ToString()
 }
 
 if ($Version -notmatch '^\d+\.\d+$') { Fail-Verification "Version must use major.minor format: $Version" }

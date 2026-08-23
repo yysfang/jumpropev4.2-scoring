@@ -111,6 +111,58 @@ Describe 'IJRU maintenance scripts' {
         (Invoke-ProjectScript $projectPath 'verify-project.ps1' @{ Version = '1.1' }).ExitCode | Should Not Be 0
     }
 
+    It 'rejects required code that exists only in a text template script' {
+        $projectPath = New-IsolatedProject
+        $sourcePath = Join-Path $projectPath 'scoring-calculator.html'
+        $content = (Get-Content -LiteralPath $sourcePath -Raw) -replace 'function calculate\(', 'function removedCalculate(' -replace "addEventListener\('input'", "addEventListener('keyup'"
+        $fakeTemplate = @'
+<script type="text/template">
+function calculate() {}
+node.addEventListener('input', noop);
+</script>
+'@
+        Set-Content -LiteralPath $sourcePath -Value ($content + "`n" + $fakeTemplate)
+        Sync-ProjectHtml $projectPath
+        (Invoke-ProjectScript $projectPath 'verify-project.ps1' @{ Version = '1.1' }).ExitCode | Should Not Be 0
+    }
+
+    It 'rejects required code that exists only in an application JSON script' {
+        $projectPath = New-IsolatedProject
+        $sourcePath = Join-Path $projectPath 'scoring-calculator.html'
+        $content = (Get-Content -LiteralPath $sourcePath -Raw) -replace 'function calculate\(', 'function removedCalculate(' -replace "addEventListener\('input'", "addEventListener('keyup'"
+        $fakeJson = @'
+<script type="application/json">
+function calculate() {}
+node.addEventListener('input', noop);
+</script>
+'@
+        Set-Content -LiteralPath $sourcePath -Value ($content + "`n" + $fakeJson)
+        Sync-ProjectHtml $projectPath
+        (Invoke-ProjectScript $projectPath 'verify-project.ps1' @{ Version = '1.1' }).ExitCode | Should Not Be 0
+    }
+
+    It 'rejects required code that exists only inside an HTML comment in a script' {
+        $projectPath = New-IsolatedProject
+        $sourcePath = Join-Path $projectPath 'scoring-calculator.html'
+        $content = (Get-Content -LiteralPath $sourcePath -Raw) -replace 'function calculate\(', 'function removedCalculate(' -replace "addEventListener\('input'", "addEventListener('keyup'"
+        Set-Content -LiteralPath $sourcePath -Value ($content + "`n<script><!--`nfunction calculate() {}`nnode.addEventListener('input', noop);`n--></script>")
+        Sync-ProjectHtml $projectPath
+        (Invoke-ProjectScript $projectPath 'verify-project.ps1' @{ Version = '1.1' }).ExitCode | Should Not Be 0
+    }
+
+    It 'accepts real required code after a line comment with unmatched quotes' {
+        $projectPath = New-IsolatedProject
+        $sourcePath = Join-Path $projectPath 'scoring-calculator.html'
+        $commentAndFunction = @'
+// calculator's "entry
+function calculate(
+'@
+        $content = (Get-Content -LiteralPath $sourcePath -Raw) -replace 'function calculate\(', $commentAndFunction
+        Set-Content -LiteralPath $sourcePath -Value $content
+        Sync-ProjectHtml $projectPath
+        (Invoke-ProjectScript $projectPath 'verify-project.ps1' @{ Version = '1.1' }).ExitCode | Should Be 0
+    }
+
     It 'accepts a seven-equals explanatory line that is not a conflict marker' {
         $projectPath = New-IsolatedProject
         $sourcePath = Join-Path $projectPath 'scoring-calculator.html'
