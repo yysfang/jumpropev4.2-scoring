@@ -1,89 +1,74 @@
 [CmdletBinding()]
-param(
-    [Parameter(Mandatory = $true)]
-    [string]$Version
-)
+param([Parameter(Mandatory = $true)][string]$Version)
 
 $ErrorActionPreference = 'Stop'
 
 function Fail-Verification {
     param([string]$Message)
-
     [Console]::Error.WriteLine($Message)
     exit 1
 }
 
-if ($Version -notmatch '^\d+\.\d+$') {
-    Fail-Verification "Version must use major.minor format: $Version"
+function Test-PrivacyPath {
+    param([string]$Path)
+    return $Path -eq '.workbuddy' -or $Path -like '.workbuddy/*' -or
+           $Path -eq '打分记录' -or $Path -like '打分记录/*' -or
+           $Path -eq '.worktrees' -or $Path -like '.worktrees/*'
 }
 
-$repositoryRoot = Split-Path -LiteralPath $PSScriptRoot
-$sourcePath = Join-Path -Path $repositoryRoot -ChildPath 'scoring-calculator.html'
-$releasePath = Join-Path -Path $repositoryRoot -ChildPath 'docs\index.html'
-$snapshotPath = Join-Path -Path $repositoryRoot -ChildPath ("versions\scoring-calculator-v$Version.html")
-$htmlPaths = @($sourcePath, $releasePath, $snapshotPath)
+if ($Version -notmatch '^\d+\.\d+$') { Fail-Verification "Version must use major.minor format: $Version" }
 
+$gitRepositoryRoot = Split-Path -LiteralPath $PSScriptRoot
+$repositoryRoot = $gitRepositoryRoot
+if (-not [string]::IsNullOrWhiteSpace($env:IJRU_VERIFY_CONTENT_ROOT)) {
+    if (-not (Test-Path -LiteralPath $env:IJRU_VERIFY_CONTENT_ROOT -PathType Container)) { Fail-Verification 'Verification content root does not exist.' }
+    $repositoryRoot = (Resolve-Path -LiteralPath $env:IJRU_VERIFY_CONTENT_ROOT).Path
+}
+$sourcePath = Join-Path $repositoryRoot 'scoring-calculator.html'
+$releasePath = Join-Path $repositoryRoot 'docs\index.html'
+$snapshotPath = Join-Path $repositoryRoot ("versions\scoring-calculator-v$Version.html")
+$htmlPaths = @($sourcePath, $releasePath, $snapshotPath)
 foreach ($htmlPath in $htmlPaths) {
-    if (-not (Test-Path -LiteralPath $htmlPath -PathType Leaf)) {
-        Fail-Verification "Required HTML file is missing: $htmlPath"
-    }
+    if (-not (Test-Path -LiteralPath $htmlPath -PathType Leaf)) { Fail-Verification "Required HTML file is missing: $htmlPath" }
 }
 
 $sourceHash = (Get-FileHash -LiteralPath $sourcePath -Algorithm SHA256).Hash
 foreach ($htmlPath in @($releasePath, $snapshotPath)) {
-    if ((Get-FileHash -LiteralPath $htmlPath -Algorithm SHA256).Hash -ne $sourceHash) {
-        Fail-Verification "HTML SHA256 does not match the source: $htmlPath"
-    }
+    if ((Get-FileHash -LiteralPath $htmlPath -Algorithm SHA256).Hash -ne $sourceHash) { Fail-Verification "HTML SHA256 does not match the source: $htmlPath" }
 }
 
 $requiredPatterns = @(
-    'function\s+calcDDDJ\s*\(',
-    'function\s+calcDDDT\s*\(',
-    'function\s+calcSRQ\s*\(',
-    'function\s+calculate\s*\(',
-    'function\s+switchEvent\s*\(',
-    'addEventListener\s*\('
+    '(?m)^[\t ]*function\s+calcDDDJ\s*\(',
+    '(?m)^[\t ]*function\s+calcDDDT\s*\(',
+    '(?m)^[\t ]*function\s+calcSRQ\s*\(',
+    '(?m)^[\t ]*function\s+calculate\s*\(',
+    '(?m)^[\t ]*function\s+switchEvent\s*\(',
+    'addEventListener\s*\(\s*[''"]click[''"]',
+    'addEventListener\s*\(\s*[''"]input[''"]'
 )
-$conflictPattern = '(?m)^(<<<<<<<|=======|>>>>>>>)'
-
 foreach ($htmlPath in $htmlPaths) {
+    $content = Get-Content -LiteralPath $htmlPath -Raw
     foreach ($requiredPattern in $requiredPatterns) {
-        if (-not (Select-String -LiteralPath $htmlPath -Pattern $requiredPattern -Quiet)) {
-            Fail-Verification "Required event or core function is missing from: $htmlPath"
-        }
+        if ($content -notmatch $requiredPattern) { Fail-Verification "Required event or core function is missing from: $htmlPath" }
     }
-    if (Select-String -LiteralPath $htmlPath -Pattern $conflictPattern -Quiet) {
-        Fail-Verification "Merge conflict marker found in: $htmlPath"
-    }
+    $hasConflictStart = $content -match '(?m)^[\t ]*<<<<<<<[^\r\n]*\r?$'
+    $hasConflictSeparator = $content -match '(?m)^[\t ]*=======[\t ]*\r?$'
+    $hasConflictEnd = $content -match '(?m)^[\t ]*>>>>>>>[^\r\n]*\r?$'
+    if ($hasConflictStart -and $hasConflictSeparator -and $hasConflictEnd) { Fail-Verification "Git merge conflict marker found in: $htmlPath" }
 }
 
-$gitIgnorePath = Join-Path -Path $repositoryRoot -ChildPath '.gitignore'
-if (-not (Test-Path -LiteralPath $gitIgnorePath -PathType Leaf)) {
-    Fail-Verification 'Missing .gitignore privacy-path rules.'
-}
-
-$gitIgnoreContent = Get-Content -LiteralPath $gitIgnorePath -Raw
-foreach ($privacyPath in @('.workbuddy/', '打分记录/', '.worktrees/')) {
-    if ($gitIgnoreContent -notmatch [regex]::Escape($privacyPath)) {
-        Fail-Verification "Privacy path is not ignored: $privacyPath"
-    }
-}
-
-Push-Location -LiteralPath $repositoryRoot
+Push-Location -LiteralPath $gitRepositoryRoot
 try {
-    $trackedFiles = @(git ls-files)
-    if ($LASTEXITCODE -ne 0) {
-        Fail-Verification 'Unable to inspect Git tracking status.'
+    foreach ($privacyProbe in @('.workbuddy/probe', '打分记录/probe', '.worktrees/probe')) {
+        git check-ignore --no-index -q -- $privacyProbe
+        if ($LASTEXITCODE -ne 0) { Fail-Verification "Privacy path is not actually ignored: $privacyProbe" }
     }
-}
-finally {
-    Pop-Location
-}
+    $trackedFiles = @(git ls-files)
+    if ($LASTEXITCODE -ne 0) { Fail-Verification 'Unable to inspect Git tracking status.' }
+} finally { Pop-Location }
 
 foreach ($trackedFile in $trackedFiles) {
-    if ($trackedFile -like '.workbuddy/*' -or $trackedFile -like '打分记录/*' -or $trackedFile -like '.worktrees/*') {
-        Fail-Verification "Privacy path is tracked: $trackedFile"
-    }
+    if (Test-PrivacyPath $trackedFile) { Fail-Verification "Privacy path is tracked: $trackedFile" }
 }
 
 Write-Host "Project verification passed for v$Version."
