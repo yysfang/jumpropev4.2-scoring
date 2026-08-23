@@ -1,0 +1,1220 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>IJRU 花样跳绳计分器（V4.2）</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Anton&family=Noto+Sans+SC:wght@400;500;700;900&family=Share+Tech+Mono&display=swap" rel="stylesheet">
+<!-- Google Analytics -->
+<script async src="https://www.googletagmanager.com/gtag/js?id=G-9WE4MYPM9J"></script>
+<script>
+  window.dataLayer = window.dataLayer || [];
+  function gtag(){dataLayer.push(arguments);}
+  gtag('js', new Date());
+  gtag('config', 'G-9WE4MYPM9J');
+</script>
+<style>
+/* ============================================================
+   IJRU SCORING CALCULATOR — "CHAMPIONSHIP ARENA"
+   ============================================================ */
+
+/* ===== CSS Variables ===== */
+:root {
+  --bg: #060B14;
+  --surface: #0D1424;
+  --surface-elevated: #111B30;
+  --border: #1A2948;
+  --border-active: #2A4570;
+  --text: #E4EAF2;
+  --text-dim: #8899B4;
+  --text-muted: #4A5A78;
+  --gold: #E8B83A;
+  --gold-dim: rgba(232, 184, 58, 0.18);
+  --gold-glow: rgba(232, 184, 58, 0.35);
+  --cyan: #38BDF8;
+  --cyan-dim: rgba(56, 189, 248, 0.15);
+  --cyan-glow: rgba(56, 189, 248, 0.3);
+  --teal: #22D3A0;
+  --teal-dim: rgba(34, 211, 160, 0.15);
+  --teal-glow: rgba(34, 211, 160, 0.28);
+  --red: #EF4444;
+  --red-dim: rgba(239, 68, 68, 0.15);
+  --red-glow: rgba(239, 68, 68, 0.25);
+  --radius: 6px;
+  --radius-lg: 10px;
+  --font-display: 'Anton', 'Noto Sans SC', sans-serif;
+  --font-mono: 'Share Tech Mono', monospace;
+  --font-cjk: 'Noto Sans SC', sans-serif;
+  --transition: 0.18s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* ===== Reset & Base ===== */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+html { background: var(--bg); }
+
+body {
+  font-family: var(--font-cjk);
+  background:
+    radial-gradient(ellipse 90% 50% at 50% 0%, rgba(56, 189, 248, 0.04) 0%, transparent 60%),
+    radial-gradient(ellipse 60% 40% at 85% 25%, rgba(232, 184, 58, 0.03) 0%, transparent 55%),
+    radial-gradient(ellipse 50% 40% at 15% 70%, rgba(239, 68, 68, 0.02) 0%, transparent 55%),
+    var(--bg);
+  color: var(--text);
+  min-height: 100vh;
+  padding: 0 16px 48px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Court-line texture overlay */
+body::after {
+  content: '';
+  position: fixed; inset: 0; pointer-events: none; z-index: 0;
+  opacity: 0.03;
+  background:
+    repeating-linear-gradient(0deg, transparent, transparent 60px, rgba(255,255,255,0.5) 60px, rgba(255,255,255,0.5) 61px),
+    repeating-linear-gradient(90deg, transparent, transparent 120px, rgba(255,255,255,0.3) 120px, rgba(255,255,255,0.3) 121px);
+}
+
+input[type="number"]::-webkit-outer-spin-button,
+input[type="number"]::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+input[type="number"] { -moz-appearance: textfield; }
+
+.container { max-width: 960px; margin: 0 auto; position: relative; z-index: 1; }
+
+/* ===== Header ===== */
+.header {
+  text-align: center; padding: 32px 0 8px;
+  position: relative;
+}
+.header::after {
+  content: '';
+  display: block; width: 120px; height: 3px;
+  margin: 16px auto 0;
+  background: linear-gradient(90deg, transparent, var(--gold), transparent);
+  border-radius: 2px;
+}
+.header h1 {
+  font-family: var(--font-display);
+  font-size: 52px; font-weight: 400; letter-spacing: 0.06em;
+  color: #fff; text-transform: uppercase; line-height: 1;
+  text-shadow: 0 2px 8px rgba(0,0,0,0.5);
+}
+.header h1 .accent {
+  color: var(--gold);
+  text-shadow: 0 0 40px var(--gold-glow);
+  position: relative;
+}
+.header .subtitle {
+  font-size: 12px; color: var(--text-dim); margin-top: 6px;
+  letter-spacing: 0.08em; text-transform: uppercase;
+  font-family: var(--font-mono);
+}
+
+/* ===== Event Selector — Lane Style ===== */
+.event-selector {
+  display: flex; gap: 3px; margin: 24px 0 20px;
+  background: var(--surface); border-radius: var(--radius-lg);
+  padding: 4px; border: 1px solid var(--border);
+  overflow-x: auto; -webkit-overflow-scrolling: touch;
+}
+.event-btn {
+  flex: 1; min-width: 68px; padding: 12px 8px 10px;
+  border: none; border-radius: calc(var(--radius-lg) - 3px);
+  background: transparent; cursor: pointer; text-align: center;
+  transition: all var(--transition); font-family: var(--font-cjk);
+  position: relative;
+}
+.event-btn::before {
+  content: '';
+  position: absolute; top: 6px; left: 50%; transform: translateX(-50%);
+  width: 0; height: 2px; background: var(--gold);
+  transition: width var(--transition); border-radius: 2px;
+}
+.event-btn:hover { background: rgba(255,255,255,0.02); }
+.event-btn.active {
+  background: rgba(232, 184, 58, 0.06);
+  box-shadow: inset 0 1px 0 rgba(232, 184, 58, 0.15);
+}
+.event-btn.active::before { width: 24px; }
+.event-btn .code {
+  display: block; font-family: var(--font-mono); font-size: 15px;
+  color: var(--text-dim); letter-spacing: 0.06em; font-weight: 400;
+  transition: color var(--transition);
+}
+.event-btn.active .code { color: var(--gold); }
+.event-btn .name {
+  display: block; font-size: 10px; color: var(--text-muted);
+  margin-top: 2px; transition: color var(--transition);
+}
+.event-btn.active .name { color: var(--text-dim); }
+
+/* ===== Scoreboard ===== */
+.scoreboard {
+  background: linear-gradient(180deg, #0A1226 0%, #0D182E 100%);
+  border: 1px solid var(--border-active);
+  border-radius: var(--radius-lg);
+  padding: 0; margin-bottom: 20px; overflow: hidden;
+  position: relative;
+}
+.scoreboard::before {
+  content: '';
+  position: absolute; top: 0; left: 0; right: 0; height: 2px;
+  background: linear-gradient(90deg, transparent, var(--gold), transparent);
+  opacity: 0.5;
+}
+.sb-top {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 14px 20px 10px;
+  border-bottom: 1px solid rgba(255,255,255,0.04);
+}
+.sb-label {
+  font-family: var(--font-display); font-size: 14px; font-weight: 400;
+  color: var(--text-dim); letter-spacing: 0.08em; text-transform: uppercase;
+}
+.sb-event-tag {
+  font-family: var(--font-mono); font-size: 13px; color: var(--gold);
+  background: rgba(232, 184, 58, 0.08); border: 1px solid rgba(232, 184, 58, 0.2);
+  padding: 3px 14px; border-radius: 3px; letter-spacing: 0.06em;
+}
+.sb-metrics {
+  display: grid; grid-template-columns: repeat(4, 1fr);
+  padding: 16px 20px; gap: 12px;
+}
+.sb-metric {
+  text-align: center; padding: 14px 8px;
+  background: rgba(0,0,0,0.25); border-radius: var(--radius);
+  border: 1px solid rgba(255,255,255,0.03);
+}
+.sb-metric .label {
+  font-family: var(--font-cjk); font-size: 10px; font-weight: 700;
+  color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.08em;
+  margin-bottom: 4px;
+}
+.sb-metric .value {
+  font-family: var(--font-mono); font-size: 28px; font-weight: 400;
+  letter-spacing: 0.04em; line-height: 1.1;
+}
+.sb-metric .value.gold { color: var(--gold); text-shadow: 0 0 16px var(--gold-glow); }
+.sb-metric .value.cyan { color: var(--cyan); text-shadow: 0 0 16px var(--cyan-glow); }
+.sb-metric .value.teal { color: var(--teal); text-shadow: 0 0 16px var(--teal-glow); }
+.sb-metric .value.red { color: var(--red); text-shadow: 0 0 12px var(--red-glow); }
+
+.sb-final {
+  text-align: center; padding: 20px 20px 32px;
+  background: rgba(0,0,0,0.2);
+  border-top: 1px solid rgba(255,255,255,0.03);
+  position: relative;
+}
+.sb-final .final-label {
+  font-family: var(--font-display); font-size: 16px; font-weight: 400;
+  color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.1em;
+  margin-bottom: 2px;
+}
+.sb-final .final-value {
+  font-family: var(--font-mono); font-size: 80px; font-weight: 400;
+  color: #fff; line-height: 1; letter-spacing: 0.02em;
+  text-shadow:
+    0 0 30px rgba(232, 184, 58, 0.4),
+    0 0 60px rgba(232, 184, 58, 0.2),
+    0 0 100px rgba(232, 184, 58, 0.1),
+    0 4px 8px rgba(0,0,0,0.6);
+  transition: text-shadow 0.4s ease;
+}
+.sb-final.pulse .final-value {
+  animation: scorePulse 0.5s ease;
+}
+@keyframes scorePulse {
+  0% { transform: scale(1); }
+  50% { transform: scale(1.03); text-shadow: 0 0 50px rgba(232, 184, 58, 0.7), 0 0 100px rgba(232, 184, 58, 0.4), 0 0 160px rgba(232, 184, 58, 0.2); }
+  100% { transform: scale(1); }
+}
+
+/* ===== Cards ===== */
+.card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 18px 20px; margin-bottom: 12px;
+  transition: border-color var(--transition), box-shadow var(--transition);
+  animation: cardIn 0.45s ease both;
+  position: relative;
+}
+.card::before {
+  content: '';
+  position: absolute; top: -1px; left: 20px; right: 60%;
+  height: 1px; background: linear-gradient(90deg, rgba(255,255,255,0.06), transparent);
+  transition: all var(--transition);
+}
+.card:hover { border-color: var(--border-active); box-shadow: 0 8px 32px rgba(0,0,0,0.4); }
+.card:hover::before { right: 30%; }
+.card:nth-child(1) { animation-delay: 0.04s; }
+.card:nth-child(2) { animation-delay: 0.08s; }
+.card:nth-child(3) { animation-delay: 0.12s; }
+.card:nth-child(4) { animation-delay: 0.16s; }
+.card:nth-child(5) { animation-delay: 0.20s; }
+.card:nth-child(6) { animation-delay: 0.24s; }
+.card:nth-child(7) { animation-delay: 0.28s; }
+@keyframes cardIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+
+.card-title {
+  display: flex; align-items: center; gap: 10px; margin-bottom: 14px;
+  padding-bottom: 12px; border-bottom: 1px solid rgba(255,255,255,0.04);
+  font-family: var(--font-display); font-size: 18px; font-weight: 400;
+  letter-spacing: 0.04em; color: #fff; text-transform: uppercase;
+}
+.card-title .badge {
+  font-family: var(--font-cjk); font-size: 9px; font-weight: 700;
+  background: rgba(255,255,255,0.03); color: var(--text-dim);
+  padding: 3px 10px; border-radius: 3px; border: 1px solid rgba(255,255,255,0.06);
+  letter-spacing: 0.04em;
+}
+.card-title .subtotal {
+  margin-left: auto; font-family: var(--font-mono); font-size: 22px; font-weight: 400;
+  color: var(--teal); text-shadow: 0 0 14px var(--teal-glow); letter-spacing: 0.04em;
+}
+.card-title .subtotal.cyan { color: var(--cyan); text-shadow: 0 0 14px var(--cyan-glow); }
+
+/* ===== Level Table ===== */
+.level-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+.level-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.level-table th {
+  text-align: center; padding: 7px 2px;
+  font-family: var(--font-display); font-weight: 400; font-size: 14px;
+  letter-spacing: 0.04em; color: var(--text-dim);
+  border-bottom: 2px solid rgba(255,255,255,0.04);
+  white-space: nowrap;
+}
+.level-table th.val {
+  font-family: var(--font-mono); font-size: 10px; color: var(--text-muted);
+  font-weight: 400;
+}
+.level-table td { text-align: center; padding: 5px 2px; border-bottom: 1px solid rgba(255,255,255,0.015); }
+.level-table .lvl {
+  font-family: var(--font-display); font-weight: 400; font-size: 16px;
+  color: var(--text-dim); letter-spacing: 0.04em;
+}
+.level-table input {
+  width: 52px; padding: 7px 2px; text-align: center;
+  border: 1px solid var(--border); border-radius: 4px;
+  font-family: var(--font-mono); font-size: 15px; color: var(--text);
+  outline: none; background: rgba(0,0,0,0.25);
+  transition: all var(--transition);
+}
+.level-table input:hover { border-color: var(--border-active); background: rgba(0,0,0,0.35); }
+.level-table input:focus {
+  border-color: var(--gold); background: rgba(0,0,0,0.4);
+  box-shadow: 0 0 0 3px rgba(232, 184, 58, 0.08), 0 0 16px rgba(232, 184, 58, 0.06);
+}
+.level-table .sub {
+  font-family: var(--font-mono); font-weight: 400; font-size: 16px;
+  color: var(--teal); letter-spacing: 0.04em;
+}
+
+/* ===== Judge Fields ===== */
+.judge-group.simple { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 14px; }
+.judge-field label { display: block; font-family: var(--font-cjk); font-size: 12px; font-weight: 700; color: var(--text-dim); margin-bottom: 5px; }
+.judge-field input {
+  width: 100%; padding: 10px 12px; border: 1px solid var(--border);
+  border-radius: var(--radius); font-family: var(--font-mono); font-size: 16px;
+  color: var(--text); outline: none; background: rgba(0,0,0,0.25);
+  transition: all var(--transition);
+}
+.judge-field input:hover { border-color: var(--border-active); }
+.judge-field input:focus { border-color: var(--gold); box-shadow: 0 0 0 3px rgba(232, 184, 58, 0.08); background: rgba(0,0,0,0.4); }
+.judge-field .hint { font-family: var(--font-cjk); font-size: 10px; color: var(--text-muted); margin-top: 3px; }
+
+/* ===== T-Judge Grid — Penalty Box Style ===== */
+.t-label-row {
+  display: flex; align-items: center; gap: 8px; margin-bottom: 12px;
+  font-family: var(--font-display); font-size: 14px; color: var(--red);
+  letter-spacing: 0.06em; text-transform: uppercase;
+}
+.t-label-row::before {
+  content: '';
+  display: inline-block; width: 10px; height: 10px;
+  background: var(--red); border-radius: 2px;
+  box-shadow: 0 0 10px var(--red-glow);
+}
+.t-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 10px; margin-bottom: 14px; }
+.t-field { text-align: center; }
+.t-field label { display: block; font-family: var(--font-cjk); font-size: 12px; font-weight: 700; color: var(--text-dim); margin-bottom: 4px; }
+.t-field input {
+  width: 72px; padding: 9px 4px; text-align: center; border: 1px solid var(--border);
+  border-radius: 4px; font-family: var(--font-mono); font-size: 18px; color: var(--text);
+  outline: none; background: rgba(0,0,0,0.3); transition: all var(--transition);
+}
+.t-field input:hover { border-color: var(--border-active); }
+.t-field input:focus {
+  border-color: var(--red);
+  box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.1), 0 0 12px rgba(239, 68, 68, 0.06);
+  background: rgba(0,0,0,0.4);
+}
+.t-field .hint { font-family: var(--font-cjk); font-size: 10px; color: var(--text-muted); margin-top: 2px; }
+
+/* ===== M-Factor Display ===== */
+.m-calc {
+  background: rgba(239, 68, 68, 0.04);
+  border: 1px solid rgba(239, 68, 68, 0.1);
+  border-radius: var(--radius); padding: 14px 18px;
+  font-family: var(--font-mono); font-size: 13px; color: var(--text-dim);
+  letter-spacing: 0.03em;
+}
+.m-calc .m-line { display: flex; justify-content: space-between; padding: 3px 0; }
+.m-calc .m-line .val { color: var(--red); }
+.m-calc .m-line .val.zero { color: var(--text-muted); }
+.m-calc .m-result {
+  margin-top: 10px; padding-top: 10px;
+  border-top: 1px solid rgba(255,255,255,0.05);
+  text-align: center; font-size: 15px; color: var(--text);
+}
+.m-calc .m-result strong { color: var(--cyan); font-size: 20px; }
+
+/* ===== Presentation Grid ===== */
+.pres-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 10px; }
+.pres-cat {
+  background: rgba(0,0,0,0.25); border: 1px solid var(--border);
+  border-radius: var(--radius); padding: 14px 10px; text-align: center;
+  transition: border-color var(--transition);
+}
+.pres-cat:hover { border-color: var(--border-active); }
+.pres-cat > label { display: block; font-family: var(--font-cjk); font-size: 13px; font-weight: 700; color: var(--text); margin-bottom: 2px; }
+.pres-cat .weight {
+  display: block; font-family: var(--font-mono); font-size: 11px;
+  color: var(--gold); font-weight: 400; margin-bottom: 10px;
+}
+.pm-row { display: flex; align-items: center; justify-content: center; gap: 6px; margin-bottom: 5px; }
+.pm-tag {
+  width: 20px; height: 20px; border-radius: 3px;
+  font-size: 11px; font-weight: 900; display: flex;
+  align-items: center; justify-content: center;
+  font-family: var(--font-cjk);
+}
+.pm-tag.plus { background: rgba(34, 211, 160, 0.12); color: var(--teal); border: 1px solid rgba(34, 211, 160, 0.25); }
+.pm-tag.minus { background: rgba(239, 68, 68, 0.1); color: var(--red); border: 1px solid rgba(239, 68, 68, 0.2); }
+.stepper { display: flex; align-items: center; gap: 2px; }
+.step-btn {
+  width: 28px; height: 28px; border: 1px solid var(--border);
+  border-radius: 3px; background: var(--surface); cursor: pointer;
+  font-family: var(--font-mono); font-size: 16px; color: var(--text-dim);
+  transition: all 0.12s; display: flex; align-items: center; justify-content: center;
+}
+.step-btn:hover { border-color: var(--gold); color: var(--gold); background: rgba(232, 184, 58, 0.06); }
+.step-btn:active { transform: scale(0.88); }
+.step-value {
+  width: 38px; padding: 5px 1px; text-align: center;
+  font-family: var(--font-mono); font-size: 18px; color: var(--text);
+  border: 1px solid var(--border); border-radius: 3px; outline: none;
+  background: rgba(0,0,0,0.3); transition: all var(--transition);
+}
+.step-value:focus { border-color: var(--gold); box-shadow: 0 0 0 2px rgba(232, 184, 58, 0.1); }
+.eff-score {
+  font-family: var(--font-mono); font-size: 15px; color: var(--teal);
+  margin-top: 6px; text-shadow: 0 0 8px var(--teal-glow);
+}
+
+/* ===== P Judge Errors ===== */
+.pres-errors {
+  margin-top: 12px; display: flex; align-items: center; gap: 12px;
+  padding: 10px 16px;
+  background: rgba(239, 68, 68, 0.04);
+  border: 1px solid rgba(239, 68, 68, 0.12);
+  border-radius: var(--radius); flex-wrap: wrap;
+}
+.pres-errors label { font-family: var(--font-cjk); font-size: 13px; font-weight: 700; color: var(--red); }
+.pres-errors input {
+  width: 64px; padding: 7px 8px; text-align: center;
+  border: 1px solid rgba(239, 68, 68, 0.25); border-radius: 4px;
+  font-family: var(--font-mono); font-size: 18px; color: var(--text);
+  outline: none; background: rgba(0,0,0,0.3); transition: all var(--transition);
+}
+.pres-errors input:focus { border-color: var(--red); box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.1); }
+.pres-errors .hint { font-family: var(--font-cjk); font-size: 10px; color: rgba(239, 68, 68, 0.6); }
+
+/* ===== Comp Type & Required Elements ===== */
+.comp-type-row {
+  display: flex; align-items: center; gap: 10px; margin-bottom: 14px;
+  font-size: 13px; color: var(--text-dim);
+}
+.comp-type-row select {
+  padding: 7px 14px; border: 1px solid var(--border); border-radius: 4px;
+  background: rgba(0,0,0,0.3); color: var(--text);
+  font-family: var(--font-mono); font-size: 13px; outline: none;
+  cursor: pointer; transition: all var(--transition);
+}
+.comp-type-row select:focus { border-color: var(--gold); box-shadow: 0 0 0 2px rgba(232, 184, 58, 0.1); }
+
+.req-breakdown { font-family: var(--font-mono); font-size: 11px; color: var(--text-dim); letter-spacing: 0.03em; margin-bottom: 10px; }
+.req-row {
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 5px 10px; border-radius: 3px; margin-bottom: 3px;
+  background: rgba(0,0,0,0.2);
+}
+.req-row .cat-label { font-family: var(--font-cjk); font-size: 12px; font-weight: 700; color: var(--text-dim); }
+.req-row .cat-calc { color: var(--text-muted); font-size: 11px; }
+.req-row.ok .cat-calc { color: var(--teal); }
+.req-row.short .cat-calc { color: var(--red); }
+
+.req-q-result {
+  padding: 10px 14px; background: rgba(34, 211, 160, 0.04);
+  border: 1px solid rgba(34, 211, 160, 0.12); border-radius: var(--radius);
+  font-family: var(--font-mono); font-size: 14px; text-align: center;
+  color: var(--text-dim); letter-spacing: 0.03em; margin-bottom: 10px;
+}
+.req-q-result strong { color: var(--teal); font-size: 16px; }
+.req-q-result .deduction { color: var(--red); font-size: 12px; }
+
+/* ===== Clear Button ===== */
+.clear-btn {
+  font-family: var(--font-cjk); font-size: 11px; font-weight: 700;
+  padding: 5px 16px; border: 1px solid var(--border); border-radius: 3px;
+  background: transparent; cursor: pointer; color: var(--text-muted);
+  transition: all var(--transition); letter-spacing: 0.03em;
+}
+.clear-btn:hover { border-color: var(--red); color: var(--red); background: rgba(239, 68, 68, 0.06); }
+
+/* ===== Utility ===== */
+.hidden { display: none !important; }
+
+/* ===== Scrollbar ===== */
+::-webkit-scrollbar { height: 4px; width: 4px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
+::-webkit-scrollbar-thumb:hover { background: var(--border-active); }
+
+/* ===== DD Note ===== */
+.dd-note {
+  font-family: var(--font-cjk); font-size: 11px; color: var(--gold);
+  margin-top: 6px; letter-spacing: 0.03em;
+}
+
+/* ===== Responsive ===== */
+@media (max-width: 700px) {
+  body { padding: 0 8px 40px; }
+  .header h1 { font-size: 36px; }
+  .event-btn { padding: 10px 4px 8px; }
+  .event-btn .code { font-size: 13px; }
+  .event-btn .name { font-size: 8px; }
+  .sb-metrics { grid-template-columns: repeat(2, 1fr); padding: 12px; gap: 8px; }
+  .sb-metric .value { font-size: 22px; }
+  .sb-final .final-value { font-size: 52px; }
+  .card { padding: 14px 14px; }
+  .card-title { font-size: 16px; }
+  .level-table input { width: 42px; font-size: 13px; }
+  .pres-grid { grid-template-columns: repeat(2, 1fr); }
+  .judge-group.simple { grid-template-columns: 1fr; }
+  .t-grid { grid-template-columns: repeat(2, 1fr); }
+}
+@media (max-width: 400px) {
+  .header h1 { font-size: 28px; }
+  .event-selector { flex-wrap: wrap; }
+  .event-btn { flex: 1 1 30%; min-width: 55px; }
+  .pres-grid { grid-template-columns: 1fr 1fr; }
+  .sb-metrics { grid-template-columns: 1fr 1fr; }
+  .sb-final .final-value { font-size: 40px; }
+}
+@media print { .noprint { display: none; } }
+</style>
+</head>
+<body>
+<div class="container">
+
+<!-- Header -->
+<div class="header">
+  <h1>IJRU <span class="accent">计分器</span></h1>
+  <div class="subtitle">V4.2 &nbsp;·&nbsp; Championship Scoring System</div>
+</div>
+
+<div class="noprint" style="text-align:center;padding:8px 0 4px;font-size:13px;color:#8899B4;letter-spacing:0.04em">
+  加入跳绳圈 · 和全国各地绳友一起学规则 &nbsp;
+  <span style="color:#E8B83A;font-weight:700">方泽伟 Richard</span> &nbsp;|&nbsp; 微信
+  <span style="font-family:'Share Tech Mono',monospace;color:#22D3A0">a17724605074</span>
+</div>
+
+<!-- Event Selector -->
+<div class="event-selector" id="eventSelector">
+  <div class="event-btn active" data-event="srif">
+    <span class="code">SRIF</span><span class="name">个人花样</span>
+  </div>
+  <div class="event-btn" data-event="srpf">
+    <span class="code">SRPF</span><span class="name">两人同步</span>
+  </div>
+  <div class="event-btn" data-event="srtf">
+    <span class="code">SRTF</span><span class="name">四人同步</span>
+  </div>
+  <div class="event-btn" data-event="wpf">
+    <span class="code">WPF</span><span class="name">车轮花样</span>
+  </div>
+  <div class="event-btn" data-event="ddif">
+    <span class="code">DDIF</span><span class="name">三人交互</span>
+  </div>
+  <div class="event-btn" data-event="ddpf">
+    <span class="code">DDPF</span><span class="name">四人交互</span>
+  </div>
+</div>
+
+<!-- Scoreboard -->
+<div class="scoreboard">
+  <div class="sb-top">
+    <span class="sb-label">Live Score</span>
+    <span class="sb-event-tag" id="resultEventLabel">SRIF</span>
+  </div>
+  <div class="sb-metrics">
+    <div class="sb-metric"><div class="label">难度 D</div><div class="value cyan" id="resultD">0.00</div></div>
+    <div class="sb-metric"><div class="label">表现 P</div><div class="value gold" id="resultP">0.00</div></div>
+    <div class="sb-metric" id="resultQBox"><div class="label">规定 Q</div><div class="value teal" id="resultQ">1.00</div></div>
+    <div class="sb-metric"><div class="label">扣分 M</div><div class="value red" id="resultM">1.00</div></div>
+  </div>
+  <div class="sb-final" id="finalScoreBox">
+    <div class="final-label">最终得分</div>
+    <div class="final-value" id="resultR">0.00</div>
+  </div>
+</div>
+
+<!-- ===== SR Panel ===== -->
+<div id="panel-sr" class="panel" data-panel="srif,srpf,srtf">
+  <!-- DP -->
+  <div class="card">
+    <div class="card-title">DP — 力量/体操难度 <span class="badge">Power &amp; Gymnastics</span><span class="subtotal cyan" id="dpTotal">0.00</span></div>
+    <div class="level-wrap" id="dpLevels"></div>
+    <div style="text-align:right;margin-top:8px"><button class="clear-btn" data-prefix="dp">清空个数</button></div>
+  </div>
+  <!-- DM -->
+  <div class="card">
+    <div class="card-title">DM — 多摇难度 <span class="badge">Multiples</span><span class="subtotal" id="dmTotal">0.00</span></div>
+    <div class="level-wrap" id="dmLevels"></div>
+    <div style="text-align:right;margin-top:8px"><button class="clear-btn" data-prefix="dm">清空个数</button></div>
+  </div>
+  <!-- DR -->
+  <div class="card">
+    <div class="card-title">DR — 控绳难度 <span class="badge">Rope Manipulation</span><span class="subtotal" id="drTotal">0.00</span></div>
+    <div class="level-wrap" id="drLevels"></div>
+    <div style="text-align:right;margin-top:8px"><button class="clear-btn" data-prefix="dr">清空个数</button></div>
+  </div>
+  <!-- P -->
+  <div class="card">
+    <div class="card-title">表现分 P <span class="badge">Presentation</span></div>
+    <div class="pres-grid" id="srPresGrid"></div>
+    <div class="pres-errors">
+      <label>失误 Miss</label>
+      <input type="number" min="0" step="1" value="0" class="pres-errors-input" data-prefix="sr" id="srPMiss">
+    </div>
+  </div>
+  <!-- T Judge -->
+  <div class="card">
+    <div class="card-title">Technical Judge 主裁判</div>
+    <div class="t-grid">
+      <div class="t-field">
+        <label>失误 Miss</label>
+        <input type="number" min="0" step="1" value="0" id="srTMiss">
+        <div class="hint">与P裁判取平均值</div>
+      </div>
+      <div class="t-field">
+        <label>间歇 Break</label>
+        <input type="number" min="0" step="1" value="0" id="srTBreak">
+        <div class="hint">每次 5%</div>
+      </div>
+      <div class="t-field">
+        <label>时间违规 Time</label>
+        <input type="number" min="0" step="1" value="0" id="srTTimeViolation">
+        <div class="hint">每次 5%</div>
+      </div>
+      <div class="t-field">
+        <label>空间违规 Space</label>
+        <input type="number" min="0" step="1" value="0" id="srTSpaceViolation">
+        <div class="hint">每次 5%</div>
+      </div>
+      <div class="t-field" id="srPIField" style="display:none">
+        <label>互动 Interaction</label>
+        <input type="number" min="0" max="4" step="1" id="piCount" value="4">
+        <div class="hint">Pairs</div>
+      </div>
+    </div>
+    <div style="margin-top:14px;padding-top:12px;border-top:1px solid rgba(255,255,255,0.04)">
+      <div class="comp-type-row">
+        <span>赛事类型</span>
+        <select id="srCompType">
+          <option value="wc">WC 世锦赛（每类 6 个）</option>
+          <option value="iot">IOT / JWC（每类 4 个）</option>
+        </select>
+      </div>
+      <div class="req-breakdown" id="srReqBreakdown">
+        <div class="req-row"><span class="cat-label">DP</span><span class="cat-calc">—</span></div>
+        <div class="req-row"><span class="cat-label">DM</span><span class="cat-calc">—</span></div>
+        <div class="req-row"><span class="cat-label">DR</span><span class="cat-calc">—</span></div>
+        <div class="req-row hidden" id="piReqRow"><span class="cat-label">PI</span><span class="cat-calc">—</span></div>
+      </div>
+      <div class="req-q-result" id="srQResult">
+        规定元素 Q = <strong>1.0000</strong>
+        <div class="deduction">缺失 0 个 × 2.5% = 0%</div>
+      </div>
+      <input type="hidden" id="srQ" value="1">
+    </div>
+  </div>
+  <!-- 扣分系数 -->
+  <div class="card">
+    <div class="card-title">扣分系数 <span class="badge">M-Factor</span></div>
+    <div class="m-calc" id="srMCalc">
+      <div class="m-line"><span>失误 Miss 扣分（递增）</span><span class="val" id="srMissPenalty">0%</span></div>
+      <div class="m-line"><span>间歇 Break 扣分</span><span class="val" id="srBreakPenalty">0%</span></div>
+      <div class="m-line"><span>违规 Violation 扣分</span><span class="val" id="srViolationPenalty">0%</span></div>
+      <div class="m-result">M = 1 − 扣分合计 = <strong id="srMValue">1.0000</strong></div>
+    </div>
+    <input type="hidden" id="srM" value="1">
+  </div>
+</div>
+
+<!-- ===== WPF Panel ===== -->
+<div id="panel-wpf" class="panel hidden" data-panel="wpf">
+  <!-- DA -->
+  <div class="card">
+    <div class="card-title">DA — 运动员A难度 <span class="badge">Athlete A</span><span class="subtotal cyan" id="daTotal">0.00</span></div>
+    <div class="level-wrap" id="daLevels"></div>
+    <div style="text-align:right;margin-top:8px"><button class="clear-btn" data-prefix="da">清空个数</button></div>
+  </div>
+  <!-- DB -->
+  <div class="card">
+    <div class="card-title">DB — 运动员B难度 <span class="badge">Athlete B</span><span class="subtotal" id="dbTotal">0.00</span></div>
+    <div class="level-wrap" id="dbLevels"></div>
+    <div style="text-align:right;margin-top:8px"><button class="clear-btn" data-prefix="db">清空个数</button></div>
+  </div>
+  <!-- P -->
+  <div class="card">
+    <div class="card-title">表现分 P <span class="badge">Presentation</span></div>
+    <div class="pres-grid" id="wpfPresGrid"></div>
+    <div class="pres-errors">
+      <label>失误 Miss</label>
+      <input type="number" min="0" step="1" value="0" class="pres-errors-input" data-prefix="wpf" id="wpfPMiss">
+    </div>
+  </div>
+  <!-- T Judge -->
+  <div class="card">
+    <div class="card-title">Technical Judge 主裁判</div>
+    <div class="t-grid">
+      <div class="t-field">
+        <label>失误 Miss</label>
+        <input type="number" min="0" step="1" value="0" id="wpfTMiss">
+        <div class="hint">与P裁判取平均值</div>
+      </div>
+      <div class="t-field">
+        <label>间歇 Break</label>
+        <input type="number" min="0" step="1" value="0" id="wpfTBreak">
+        <div class="hint">每次 5%</div>
+      </div>
+      <div class="t-field">
+        <label>时间违规 Time</label>
+        <input type="number" min="0" step="1" value="0" id="wpfTTimeViolation">
+        <div class="hint">每次 5%</div>
+      </div>
+      <div class="t-field">
+        <label>空间违规 Space</label>
+        <input type="number" min="0" step="1" value="0" id="wpfTSpaceViolation">
+        <div class="hint">每次 5%</div>
+      </div>
+    </div>
+    <div class="comp-type-row" style="margin-top:12px">
+      <span>赛事类型</span>
+      <select id="wpfCompType">
+        <option value="wc">WC 世锦赛（每类 6 个）</option>
+        <option value="iot">IOT / JWC（每类 4 个）</option>
+      </select>
+      <span style="font-size:11px;color:var(--text-muted)">任何级别均算 1 个</span>
+    </div>
+    <div class="t-grid" style="margin-top:8px">
+      <div class="t-field">
+        <label>DP 力量/体操</label>
+        <input type="number" min="0" step="1" value="0" id="wpfReqDP">
+        <div class="hint">完成个数</div>
+      </div>
+      <div class="t-field">
+        <label>DM 多摇</label>
+        <input type="number" min="0" step="1" value="0" id="wpfReqDM">
+        <div class="hint">完成个数</div>
+      </div>
+      <div class="t-field">
+        <label>DR 控绳</label>
+        <input type="number" min="0" step="1" value="0" id="wpfReqDR">
+        <div class="hint">完成个数</div>
+      </div>
+      <div class="t-field">
+        <label>PI 互动配合</label>
+        <input type="number" min="0" step="1" value="0" id="wpfReqPI">
+        <div class="hint">完成个数</div>
+      </div>
+    </div>
+    <div class="req-q-result" id="wpfQResult" style="margin-top:12px">
+      规定元素 Q = <strong>1.0000</strong>
+      <div class="deduction">缺失 0 个 × 2.5% = 0%</div>
+    </div>
+    <input type="hidden" id="wpfQ" value="1">
+  </div>
+  <!-- 扣分系数 -->
+  <div class="card">
+    <div class="card-title">扣分系数 <span class="badge">M-Factor</span></div>
+    <div class="m-calc" id="wpfMCalc">
+      <div class="m-line"><span>失误 Miss 扣分（递增）</span><span class="val" id="wpfMissPenalty">0%</span></div>
+      <div class="m-line"><span>间歇 Break 扣分</span><span class="val" id="wpfBreakPenalty">0%</span></div>
+      <div class="m-line"><span>违规 Violation 扣分</span><span class="val" id="wpfViolationPenalty">0%</span></div>
+      <div class="m-result">M = 1 − 扣分合计 = <strong id="wpfMValue">1.0000</strong></div>
+    </div>
+    <input type="hidden" id="wpfM" value="1">
+  </div>
+</div>
+
+<!-- ===== DD Panel (shared by DDIF & DDPF) ===== -->
+<div id="panel-dd" class="panel hidden" data-panel="ddif,ddpf">
+  <!-- DJ -->
+  <div class="card">
+    <div class="card-title">DJ — 跳绳难度 <span class="badge">Jumper · 平均</span><span class="subtotal cyan" id="djTotal">0.00</span></div>
+    <div class="level-wrap"><table class="level-table"><thead id="djHead"></thead><tbody id="djBody"></tbody></table></div>
+    <div style="text-align:right;margin-top:4px"><button class="clear-btn" data-prefix="dj">清空</button></div>
+  </div>
+  <!-- DT -->
+  <div class="card">
+    <div class="card-title">DT — 摇绳难度 <span class="badge">Turner · Top 20 平均</span><span class="subtotal" id="dtTotal">0.00</span></div>
+    <div class="level-wrap"><table class="level-table"><thead id="dtHead"></thead><tbody id="dtBody"></tbody></table></div>
+    <div class="dd-note">独特技能取最高 20 个计入，不足补 0</div>
+    <div style="text-align:right;margin-top:4px"><button class="clear-btn" data-prefix="dt">清空</button></div>
+  </div>
+  <!-- P -->
+  <div class="card">
+    <div class="card-title">表现分 P <span class="badge">Presentation</span></div>
+    <div class="pres-grid" id="ddPresGrid"></div>
+    <div class="pres-errors">
+      <label>失误 Miss</label>
+      <input type="number" min="0" step="1" value="0" class="pres-errors-input" data-prefix="dd" id="ddPMiss">
+    </div>
+  </div>
+  <!-- T Judge -->
+  <div class="card">
+    <div class="card-title">Technical Judge 主裁判</div>
+    <div class="t-grid">
+      <div class="t-field">
+        <label>失误 Miss</label>
+        <input type="number" min="0" step="1" value="0" id="ddTMiss">
+        <div class="hint">与P裁判取平均值</div>
+      </div>
+      <div class="t-field">
+        <label>时间违规 Time</label>
+        <input type="number" min="0" step="1" value="0" id="ddTTimeViolation">
+        <div class="hint">每次 5%</div>
+      </div>
+      <div class="t-field">
+        <label>空间违规 Space</label>
+        <input type="number" min="0" step="1" value="0" id="ddTSpaceViolation">
+        <div class="hint">每次 5%</div>
+      </div>
+    </div>
+  </div>
+  <!-- 扣分系数 -->
+  <div class="card">
+    <div class="card-title">扣分系数 <span class="badge">交互绳无规定元素 Q</span></div>
+    <div class="m-calc" id="ddMCalc">
+      <div class="m-line"><span>失误 Miss 扣分（递增）</span><span class="val" id="ddMissPenalty">0%</span></div>
+      <div class="m-line"><span>违规 Violation 扣分</span><span class="val" id="ddViolationPenalty">0%</span></div>
+      <div class="m-result">M = 1 − 扣分合计 = <strong id="ddMValue">1.0000</strong></div>
+    </div>
+    <input type="hidden" id="ddM" value="1">
+  </div>
+</div>
+
+</div><!-- /container -->
+
+<script>
+// ===== Difficulty Level Values =====
+const LEVELS = [0.5, 1, 2, 3, 4, 5, 6, 7, 8].map(level => ({
+  level,
+  val: Math.round(0.1 * Math.pow(1.5, level) * 100) / 100
+}));
+
+// ===== Presentation Categories =====
+const PRES_CATEGORIES = [
+  { id: 'musicality', label: '音乐性', weight: 0.25 },
+  { id: 'execution', label: '完成质量', weight: 0.25 },
+  { id: 'creativity', label: '创造力', weight: 0.20 },
+  { id: 'entertainment', label: '娱乐性', weight: 0.15 },
+  { id: 'variety', label: '多样性', weight: 0.15 },
+];
+
+// ===== Build Level Tables =====
+function buildLevelTable(containerId, prefix) {
+  const container = document.getElementById(containerId);
+  let html = '<table class="level-table"><thead><tr><th>级别</th>';
+  LEVELS.forEach(l => { html += `<th>${l.level}</th>`; });
+  html += '<th>合计</th></tr><tr><th>分值</th>';
+  LEVELS.forEach(l => { html += `<th class="val">${l.val.toFixed(2)}</th>`; });
+  html += '<th></th></tr></thead><tbody><tr><td class="lvl">个数</td>';
+  LEVELS.forEach((l, idx) => {
+    html += `<td><input type="number" min="0" step="1" value="0" class="lvl-input" data-prefix="${prefix}" data-idx="${idx}"></td>`;
+  });
+  html += `<td class="sub" id="${prefix}Sub">0.00</td>`;
+  html += '</tr></tbody></table>';
+  container.innerHTML = html;
+}
+buildLevelTable('dpLevels', 'dp');
+buildLevelTable('dmLevels', 'dm');
+buildLevelTable('drLevels', 'dr');
+buildLevelTable('daLevels', 'da');
+buildLevelTable('dbLevels', 'db');
+
+// ===== Build Presentation Grids =====
+function buildPresGrid(containerId, prefix) {
+  const container = document.getElementById(containerId);
+  let html = '';
+  PRES_CATEGORIES.forEach(cat => {
+    html += `<div class="pres-cat">
+      <label>${cat.label}</label><span class="weight">${(cat.weight * 100)}%</span>
+      <div class="pm-row"><span class="pm-tag plus">+</span><div class="stepper">
+        <button class="step-btn step-minus" data-prefix="${prefix}" data-cat="${cat.id}" data-field="plus">−</button>
+        <input type="number" min="0" value="0" class="step-value" data-prefix="${prefix}" data-cat="${cat.id}" data-field="plus">
+        <button class="step-btn step-plus" data-prefix="${prefix}" data-cat="${cat.id}" data-field="plus">+</button>
+      </div></div>
+      <div class="pm-row"><span class="pm-tag minus">−</span><div class="stepper">
+        <button class="step-btn step-minus" data-prefix="${prefix}" data-cat="${cat.id}" data-field="minus">−</button>
+        <input type="number" min="0" value="0" class="step-value" data-prefix="${prefix}" data-cat="${cat.id}" data-field="minus">
+        <button class="step-btn step-plus" data-prefix="${prefix}" data-cat="${cat.id}" data-field="minus">+</button>
+      </div></div>
+      <div class="eff-score" data-prefix="${prefix}" data-cat="${cat.id}">= 12</div>
+    </div>`;
+  });
+  container.innerHTML = html;
+}
+buildPresGrid('srPresGrid', 'sr');
+buildPresGrid('wpfPresGrid', 'wpf');
+buildPresGrid('ddPresGrid', 'dd');
+
+// ===== DD Level Definitions =====
+// L(x) = 1.5^x  (DD: no 0.1 multiplier, unlike SR)
+function L(x) { return x === 0 ? 0 : Math.round(Math.pow(1.5, x) * 100) / 100; }
+
+const DJ_LEVELS = [
+  { label: '0', x: 0 },
+  { label: '1−', x: 0.75 },
+  { label: '1', x: 1 },
+  { label: '1+', x: 1.5 },
+  { label: '2−', x: 1.75 },
+  { label: '2', x: 2 },
+  { label: '2+', x: 2.5 },
+  { label: '3−', x: 2.75 },
+  { label: '3', x: 3 },
+  { label: '3+', x: 3.5 },
+  { label: '4−', x: 3.75 },
+  { label: '4', x: 4 },
+  { label: '4+', x: 4.5 },
+  { label: '5−', x: 4.75 },
+  { label: '5', x: 5 },
+  { label: '5+', x: 5.5 },
+];
+
+const DT_LEVELS = DJ_LEVELS.filter(l => l.x > 0);
+
+// ===== Build DD Tables =====
+function buildDDTables() {
+  function buildTable(headId, bodyId, levels, prefix) {
+    let headHTML = '<tr><th>级别</th>';
+    levels.forEach(l => { headHTML += `<th>${l.label}</th>`; });
+    headHTML += '<th>合计</th></tr><tr><th>分值</th>';
+    levels.forEach(l => { headHTML += `<th class="val">${L(l.x).toFixed(2)}</th>`; });
+    headHTML += '<th></th></tr>';
+    document.getElementById(headId).innerHTML = headHTML;
+
+    let bodyHTML = '<tr><td class="lvl">个数</td>';
+    levels.forEach(l => {
+      bodyHTML += `<td><input type="number" min="0" step="1" value="0" class="dd-input" data-prefix="${prefix}" data-x="${l.x}"></td>`;
+    });
+    bodyHTML += `<td class="sub" id="${prefix}Total">0.00</td></tr>`;
+    document.getElementById(bodyId).innerHTML = bodyHTML;
+  }
+  buildTable('djHead', 'djBody', DJ_LEVELS, 'dj');
+  buildTable('dtHead', 'dtBody', DT_LEVELS, 'dt');
+}
+buildDDTables();
+
+// ===== Calculate DJ (average of L(x) values) =====
+function calcDDDJ() {
+  let totalVal = 0, totalCount = 0;
+  document.querySelectorAll('.dd-input[data-prefix="dj"]').forEach(inp => {
+    const count = parseInt(inp.value) || 0;
+    const x = parseFloat(inp.dataset.x);
+    totalVal += count * L(x);
+    totalCount += count;
+  });
+  const avg = totalCount > 0 ? Math.round(totalVal / totalCount * 100) / 100 : 0;
+  document.getElementById('djTotal').textContent = avg.toFixed(2);
+  return avg;
+}
+
+// ===== Calculate DT (average of top 20 L(x) values) =====
+function calcDDDT() {
+  let marks = [];
+  document.querySelectorAll('.dd-input[data-prefix="dt"]').forEach(inp => {
+    const count = parseInt(inp.value) || 0;
+    const x = parseFloat(inp.dataset.x);
+    for (let i = 0; i < count; i++) marks.push(L(x));
+  });
+  marks.sort((a, b) => b - a);
+  const top20 = marks.slice(0, 20);
+  while (top20.length < 20) top20.push(0);
+  const avg = Math.round(top20.reduce((s, v) => s + v, 0) / 20 * 100) / 100;
+  document.getElementById('dtTotal').textContent = avg.toFixed(2);
+  return avg;
+}
+
+// ===== Calculate judge subtotal =====
+function calcJudgeSubtotal(prefix) {
+  let total = 0;
+  document.querySelectorAll(`.lvl-input[data-prefix="${prefix}"]`).forEach(input => {
+    const idx = parseInt(input.dataset.idx);
+    const count = parseInt(input.value) || 0;
+    total += count * LEVELS[idx].val;
+  });
+  total = Math.round(total * 100) / 100;
+  const subEl = document.getElementById(`${prefix}Sub`);
+  if (subEl) subEl.textContent = total.toFixed(2);
+  const totalEl = document.getElementById(`${prefix}Total`);
+  if (totalEl) totalEl.textContent = total.toFixed(2);
+  return total;
+}
+
+// ===== Calculate Presentation =====
+function calcPresentation(prefix) {
+  const pMissInput = document.getElementById(`${prefix}PMiss`);
+  const errors = (pMissInput ? parseInt(pMissInput.value) : 0) || 0;
+  let weighted = 0;
+  PRES_CATEGORIES.forEach(cat => {
+    const plusInput = document.querySelector(`.step-value[data-prefix="${prefix}"][data-cat="${cat.id}"][data-field="plus"]`);
+    const minusInput = document.querySelector(`.step-value[data-prefix="${prefix}"][data-cat="${cat.id}"][data-field="minus"]`);
+    const plus = parseInt(plusInput?.value) || 0;
+    const minus = parseInt(minusInput?.value) || 0;
+    const effective = Math.max(0, Math.min(24, Math.round(12 + plus - minus - errors)));
+    const scoreEl = document.querySelector(`.eff-score[data-prefix="${prefix}"][data-cat="${cat.id}"]`);
+    if (scoreEl) scoreEl.textContent = '= ' + effective;
+    weighted += effective * cat.weight;
+  });
+  const p = Math.round(weighted * 0.05 * 10000) / 10000;
+  return p;
+}
+
+// ===== Required Elements =====
+function getMovesByLevel(prefix) {
+  const moves = [];
+  document.querySelectorAll(`.lvl-input[data-prefix="${prefix}"]`).forEach(input => {
+    const idx = parseInt(input.dataset.idx);
+    const count = parseInt(input.value) || 0;
+    for (let i = 0; i < count; i++) moves.push(LEVELS[idx].level);
+  });
+  moves.sort((a, b) => b - a);
+  return moves;
+}
+
+function countReqElementsSR(prefix, requiredN) {
+  const moves = getMovesByLevel(prefix);
+  const topN = moves.slice(0, requiredN);
+  let count = 0;
+  topN.forEach(level => { count += (level >= 3) ? 1 : 0.5; });
+  return { moves, count: Math.min(count, requiredN), required: requiredN };
+}
+
+// ===== Calculate Q for SR =====
+function calcSRQ() {
+  const compType = document.getElementById('srCompType').value;
+  const requiredN = (compType === 'wc') ? 6 : 4;
+  const activeEvent = document.querySelector('.event-btn.active')?.dataset?.event || 'srif';
+  const isPairs = ['srpf', 'srtf'].includes(activeEvent);
+
+  const cats = [{ prefix: 'dp', label: 'DP' }, { prefix: 'dm', label: 'DM' }, { prefix: 'dr', label: 'DR' }];
+  let totalMissing = 0, html = '';
+
+  cats.forEach(cat => {
+    const r = countReqElementsSR(cat.prefix, requiredN);
+    const missing = Math.max(0, requiredN - r.count);
+    totalMissing += missing;
+    const topN = r.moves.slice(0, requiredN);
+    const hi = topN.filter(l => l >= 3).length;
+    const lo = topN.filter(l => l < 3).length;
+    html += `<div class="req-row ${missing === 0 ? 'ok' : 'short'}"><span class="cat-label">${cat.label}</span><span class="cat-calc">${r.count.toFixed(1)} / ${requiredN} 个（≥3级: ${hi}×1，<3级: ${lo}×0.5${r.moves.length > requiredN ? '，取前' + requiredN + '个' : ''}）</span></div>`;
+  });
+
+  if (isPairs) {
+    const piCount = parseInt(document.getElementById('piCount').value) || 0;
+    const piMissing = Math.max(0, 4 - piCount);
+    totalMissing += piMissing;
+    html += `<div class="req-row ${piMissing === 0 ? 'ok' : 'short'}"><span class="cat-label">PI</span><span class="cat-calc">${piCount} / 4 个（Tech Judge）</span></div>`;
+  }
+
+  document.getElementById('srReqBreakdown').innerHTML = html;
+  const Q = Math.max(0, 1 - totalMissing * 0.025);
+  document.getElementById('srQ').value = Q;
+  document.getElementById('srQResult').innerHTML = `规定元素 Q = <strong>${Q.toFixed(4)}</strong><div class="deduction">缺失 ${totalMissing.toFixed(1)} 个 × 2.5% = ${(totalMissing * 2.5).toFixed(1)}%${totalMissing > 0 ? ' 扣分' : ''}</div>`;
+  return Q;
+}
+
+// ===== Calculate Q for WPF from T Judge inputs =====
+function calcWPFQ() {
+  const compType = document.getElementById('wpfCompType').value;
+  const requiredN = (compType === 'wc') ? 6 : 4;
+  const cats = [
+    { id: 'DP', el: 'wpfReqDP', required: requiredN },
+    { id: 'DM', el: 'wpfReqDM', required: requiredN },
+    { id: 'DR', el: 'wpfReqDR', required: requiredN },
+    { id: 'PI', el: 'wpfReqPI', required: 4 },
+  ];
+  let totalMissing = 0;
+  cats.forEach(c => {
+    const done = parseInt(document.getElementById(c.el)?.value) || 0;
+    totalMissing += Math.max(0, c.required - done);
+  });
+  const Q = Math.max(0, 1 - totalMissing * 0.025);
+  document.getElementById('wpfQ').value = Q;
+  document.getElementById('wpfQResult').innerHTML = `规定元素 Q = <strong>${Q.toFixed(4)}</strong><div class="deduction">缺失 ${totalMissing} 个 × 2.5% = ${(totalMissing * 2.5).toFixed(1)}%${totalMissing > 0 ? ' 扣分' : ''}</div>`;
+  return Q;
+}
+
+// ===== Calculate M Factor =====
+function calcMFactor(prefix, hasBreak) {
+  const pMiss = parseInt(document.getElementById(`${prefix}PMiss`)?.value) || 0;
+  const tMiss = parseInt(document.getElementById(`${prefix}TMiss`)?.value) || 0;
+  const avgMiss = Math.round((pMiss + tMiss) / 2);
+
+  let m = 0;
+  if (avgMiss >= 1) m += 0.05;
+  if (avgMiss >= 2) m += 0.075;
+  if (avgMiss >= 3) m += 0.10 * (avgMiss - 2);
+
+  let b = 0;
+  if (hasBreak) {
+    const breakCount = parseInt(document.getElementById(`${prefix}TBreak`)?.value) || 0;
+    b = 0.05 * breakCount;
+  }
+
+  const timeV = parseInt(document.getElementById(`${prefix}TTimeViolation`)?.value) || 0;
+  const spaceV = parseInt(document.getElementById(`${prefix}TSpaceViolation`)?.value) || 0;
+  const v = 0.05 * (timeV + spaceV);
+
+  const totalPenalty = m + b + v;
+  const M = Math.max(0, 1 - totalPenalty);
+
+  const fmtPct = (val) => val === 0 ? '0%' : (val * 100).toFixed(1) + '%';
+  document.getElementById(`${prefix}MissPenalty`).textContent = fmtPct(m) + (avgMiss > 0 ? ` (${avgMiss}次)` : '');
+  if (hasBreak) {
+    document.getElementById(`${prefix}BreakPenalty`).textContent = fmtPct(b);
+  }
+  document.getElementById(`${prefix}ViolationPenalty`).textContent = fmtPct(v) + ((timeV + spaceV) > 0 ? ` (${timeV + spaceV}次)` : '');
+  document.getElementById(`${prefix}MValue`).textContent = M.toFixed(4);
+  document.getElementById(`${prefix}M`).value = M;
+
+  return M;
+}
+
+// ===== Score pulse =====
+let prevR = '0.00';
+function pulseScoreIfChanged(newR) {
+  const str = newR.toFixed(2);
+  if (str !== prevR) {
+    prevR = str;
+    const box = document.getElementById('finalScoreBox');
+    box.classList.remove('pulse');
+    void box.offsetWidth;
+    box.classList.add('pulse');
+  }
+}
+
+// ===== Main Calculation =====
+function calculate() {
+  const activeEvent = document.querySelector('.event-btn.active')?.dataset?.event || 'srif';
+  let D = 0, P = 0, Q = 1, M = 1, R = 0;
+
+  if (['srif', 'srpf', 'srtf'].includes(activeEvent)) {
+    const dp = calcJudgeSubtotal('dp');
+    const dm = calcJudgeSubtotal('dm');
+    const dr = calcJudgeSubtotal('dr');
+    P = calcPresentation('sr');
+    Q = calcSRQ();
+    M = calcMFactor('sr', true);
+    D = (dp + dm + dr) / 3;
+    R = D * (1 + P) * Q * M;
+    if (R < 0) R = 0;
+
+  } else if (activeEvent === 'wpf') {
+    const da = calcJudgeSubtotal('da');
+    const db = calcJudgeSubtotal('db');
+    P = calcPresentation('wpf');
+    Q = calcWPFQ();
+    M = calcMFactor('wpf', true);
+    D = (da + db) / 2;
+    R = D * (1 + P) * Q * M;
+    if (R < 0) R = 0;
+
+  } else if (['ddif', 'ddpf'].includes(activeEvent)) {
+    const dj = calcDDDJ();
+    const dt = calcDDDT();
+    P = calcPresentation('dd');
+    Q = 1;
+    M = calcMFactor('dd', false);
+    D = Math.round((dj * 1.4 + dt) * 100) / 100;
+    R = D * (1 + P) * M;
+    if (R < 0) R = 0;
+  }
+
+  document.getElementById('resultD').textContent = D.toFixed(2);
+  document.getElementById('resultP').textContent = P.toFixed(4);
+  document.getElementById('resultQ').textContent = Q.toFixed(4);
+  document.getElementById('resultQBox').style.display = ['ddif', 'ddpf'].includes(activeEvent) ? 'none' : '';
+  document.getElementById('resultM').textContent = M.toFixed(4);
+  document.getElementById('resultR').textContent = R.toFixed(2);
+  pulseScoreIfChanged(R);
+}
+
+// ===== Event Switching =====
+function switchEvent(ev) {
+  document.querySelectorAll('.panel').forEach(p => p.classList.add('hidden'));
+  document.querySelectorAll(`.panel[data-panel*="${ev}"]`).forEach(p => p.classList.remove('hidden'));
+
+  const srPIField = document.getElementById('srPIField');
+  const piReqRow = document.getElementById('piReqRow');
+  const isPairs = ['srpf', 'srtf'].includes(ev);
+  if (srPIField) srPIField.style.display = isPairs ? '' : 'none';
+  if (piReqRow) piReqRow.classList.toggle('hidden', !isPairs);
+}
+
+document.querySelectorAll('.event-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.event-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    const ev = btn.dataset.event;
+    switchEvent(ev);
+    document.getElementById('resultEventLabel').textContent = btn.querySelector('.code').textContent;
+    calculate();
+  });
+});
+
+// ===== Auto Calculate =====
+document.querySelector('.container').addEventListener('input', e => { if (e.target.matches('input')) calculate(); });
+document.querySelector('.container').addEventListener('change', e => { if (e.target.matches('select')) calculate(); });
+
+// ===== Clear & Steppers =====
+document.addEventListener('click', e => {
+  if (e.target.classList.contains('clear-btn')) {
+    const p = e.target.dataset.prefix;
+    document.querySelectorAll(`.lvl-input[data-prefix="${p}"]`).forEach(inp => { inp.value = '0'; });
+    document.querySelectorAll(`.dd-input[data-prefix="${p}"]`).forEach(inp => { inp.value = '0'; });
+    calculate();
+  }
+  if (e.target.classList.contains('step-btn')) {
+    const { prefix, cat, field } = e.target.dataset;
+    const input = document.querySelector(`.step-value[data-prefix="${prefix}"][data-cat="${cat}"][data-field="${field}"]`);
+    if (!input) return;
+    let val = parseInt(input.value) || 0;
+    input.value = e.target.classList.contains('step-plus') ? val + 1 : Math.max(0, val - 1);
+    calculate();
+  }
+});
+
+// ===== Init =====
+calculate();
+</script>
+</body>
+</html>
