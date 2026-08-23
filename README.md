@@ -16,8 +16,8 @@
 
 ## 版本区别
 
-- 根目录的 `scoring-calculator.html` 是当前本地维护版本。
-- `docs/index.html` 是发布版本的入口；准备发布前，应确认它包含了希望上线的内容。
+- 当前计分器的发布版本为 **v1.1**，计分规则版本为 **V4.2.0**。
+- 根目录的 `scoring-calculator.html` 是当前本地维护版本；`docs/index.html` 是与其对应的网站发布入口。准备发布 v1.1 的后续维护版本前，应先确认两个入口包含同一份准备上线的内容。
 - `versions/scoring-calculator-v1.0.html` 和 `versions/scoring-calculator-v1.1.html` 是历史快照，不应当作日常编辑入口。
 - 规则资料标注为 V4.2.0；修改计分逻辑时先核对相应规则资料，再更新当前维护版本。
 
@@ -32,7 +32,7 @@
 
 ## 获取主线更新
 
-先保存或提交当前工作，再以快进方式更新主线，避免意外合并：
+先保存或提交当前工作，再以快进方式更新主线。下列 `rebase` 流程仅适用于**尚未共享、未用于发布的个人分支**：
 
 ```powershell
 git switch main
@@ -43,13 +43,25 @@ git rebase main
 
 若 `rebase` 出现冲突，先检查冲突文件并手动解决；不确定时可用 `git rebase --abort` 回到 rebase 前，再寻求协助。不要用强制覆盖命令处理陌生改动。
 
+已经共享或用于发布的分支不得执行 `rebase`，以免改写他人或发布历史；改用 `git merge main`，或在 `main` 最新提交上新建分支并通过新的提交完成修改。任何情况下都不要使用强制推送（`git push --force` 或 `git push --force-with-lease`）。
+
 ## 发布
 
 发布前在本机打开 `docs/index.html`，检查计分交互、文案和规则版本。发布内容应来自已提交的分支或已确认的 `main`，并保留发布所用提交号，便于追溯。发布后用公开地址做一次基本的页面与交互检查。
 
 ## 备份与非破坏式回退
 
-- 把远程 Git 仓库视为代码备份；个人计分记录另行备份到受控的本地或云端位置，且不要把它们提交到本仓库。
+- 本地 Git bundle 是代码备份的固定落点，必须写入 `C:\Users\98432\Documents\IJRU-scoring-backups`；不要把远程仓库当作唯一备份。创建备份时仅追加新的 bundle，绝不自动删除旧 bundle：
+
+  ```powershell
+  $backupDir = 'C:\Users\98432\Documents\IJRU-scoring-backups'
+  New-Item -ItemType Directory -Force -Path $backupDir
+  $bundle = Join-Path $backupDir ("ijru-scoring-$(Get-Date -Format 'yyyyMMdd-HHmmss').bundle")
+  git bundle create $bundle --all
+  ```
+
+  定期将该目录复制到另一受控位置；保留目录内的全部旧 bundle，便于恢复到任一备份点。
+- 个人计分记录另行备份到受控的本地或云端位置，且不要把它们提交到本仓库。
 - 在尝试较大修改前先提交一个可说明的检查点，或创建分支；不要直接覆盖现有文件。
 - 需要查看旧版本时使用 `git log --oneline`、`git show <提交号> -- <文件>` 或 `versions/` 中的快照。
 - 需要撤销已提交的改动时，优先创建一个反向提交：`git revert <提交号>`。这样保留历史，也不会破坏其他人的工作。
