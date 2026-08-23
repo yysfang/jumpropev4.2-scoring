@@ -150,6 +150,60 @@ node.addEventListener('input', noop);
         (Invoke-ProjectScript $projectPath 'verify-project.ps1' @{ Version = '1.1' }).ExitCode | Should Not Be 0
     }
 
+    It 'rejects required code that exists only in a script inside an outer HTML comment' {
+        $projectPath = New-IsolatedProject
+        $sourcePath = Join-Path $projectPath 'scoring-calculator.html'
+        $content = (Get-Content -LiteralPath $sourcePath -Raw) -replace 'function calculate\(', 'function removedCalculate(' -replace "addEventListener\('input'", "addEventListener('keyup'"
+        $commentedScript = @'
+<!--
+<script>
+function calculate() {}
+node.addEventListener('input', noop);
+</script>
+-->
+'@
+        Set-Content -LiteralPath $sourcePath -Value ($content + "`n" + $commentedScript)
+        Sync-ProjectHtml $projectPath
+        (Invoke-ProjectScript $projectPath 'verify-project.ps1' @{ Version = '1.1' }).ExitCode | Should Not Be 0
+    }
+
+    It 'rejects required code that exists only in a script inside nested template elements' {
+        $projectPath = New-IsolatedProject
+        $sourcePath = Join-Path $projectPath 'scoring-calculator.html'
+        $content = (Get-Content -LiteralPath $sourcePath -Raw) -replace 'function calculate\(', 'function removedCalculate(' -replace "addEventListener\('input'", "addEventListener('keyup'"
+        $templateScript = @'
+<template><div><template>
+<script>
+function calculate() {}
+node.addEventListener('input', noop);
+</script>
+</template></div></template>
+'@
+        Set-Content -LiteralPath $sourcePath -Value ($content + "`n" + $templateScript)
+        Sync-ProjectHtml $projectPath
+        (Invoke-ProjectScript $projectPath 'verify-project.ps1' @{ Version = '1.1' }).ExitCode | Should Not Be 0
+    }
+
+    It 'does not treat data-type as the script type attribute' {
+        $projectPath = New-IsolatedProject
+        $sourcePath = Join-Path $projectPath 'scoring-calculator.html'
+        $content = (Get-Content -LiteralPath $sourcePath -Raw) -replace '<script>', '<script data-type="text/template">'
+        Set-Content -LiteralPath $sourcePath -Value $content
+        Sync-ProjectHtml $projectPath
+        (Invoke-ProjectScript $projectPath 'verify-project.ps1' @{ Version = '1.1' }).ExitCode | Should Be 0
+    }
+
+    It 'accepts supported JavaScript MIME types and module scripts' {
+        foreach ($scriptType in @('text/javascript', 'application/javascript', 'application/ecmascript', 'text/ecmascript', 'module')) {
+            $projectPath = New-IsolatedProject
+            $sourcePath = Join-Path $projectPath 'scoring-calculator.html'
+            $content = (Get-Content -LiteralPath $sourcePath -Raw) -replace '<script>', ('<script type="' + $scriptType + '">')
+            Set-Content -LiteralPath $sourcePath -Value $content
+            Sync-ProjectHtml $projectPath
+            (Invoke-ProjectScript $projectPath 'verify-project.ps1' @{ Version = '1.1' }).ExitCode | Should Be 0
+        }
+    }
+
     It 'accepts real required code after a line comment with unmatched quotes' {
         $projectPath = New-IsolatedProject
         $sourcePath = Join-Path $projectPath 'scoring-calculator.html'

@@ -16,16 +16,140 @@ function Test-PrivacyPath {
            $Path -eq '.worktrees' -or $Path -like '.worktrees/*'
 }
 
+function Test-HtmlWhitespace {
+    param([char]$Character)
+    return $Character -eq ' ' -or $Character -eq "`t" -or $Character -eq "`n" -or
+           $Character -eq "`r" -or $Character -eq "`f"
+}
+
+function Read-HtmlTag {
+    param([string]$Html, [int]$StartIndex)
+
+    if ($StartIndex -ge $Html.Length -or $Html[$StartIndex] -ne '<') { return $null }
+    $index = $StartIndex + 1
+    $isEndTag = $false
+    if ($index -lt $Html.Length -and $Html[$index] -eq '/') {
+        $isEndTag = $true
+        $index++
+    }
+    if ($index -ge $Html.Length -or -not [char]::IsLetter($Html[$index])) { return $null }
+
+    $nameStart = $index
+    while ($index -lt $Html.Length) {
+        $character = $Html[$index]
+        if ((Test-HtmlWhitespace $character) -or $character -eq '/' -or $character -eq '>') { break }
+        $index++
+    }
+    $tagName = $Html.Substring($nameStart, $index - $nameStart).ToLowerInvariant()
+    $attributes = @{}
+
+    while ($index -lt $Html.Length) {
+        while ($index -lt $Html.Length -and (Test-HtmlWhitespace $Html[$index])) { $index++ }
+        if ($index -ge $Html.Length) { break }
+        if ($Html[$index] -eq '>') { $index++; break }
+        if ($Html[$index] -eq '/') { $index++; continue }
+
+        $attributeStart = $index
+        while ($index -lt $Html.Length) {
+            $character = $Html[$index]
+            if ((Test-HtmlWhitespace $character) -or $character -eq '=' -or $character -eq '/' -or $character -eq '>') { break }
+            $index++
+        }
+        if ($index -eq $attributeStart) { $index++; continue }
+
+        $attributeName = $Html.Substring($attributeStart, $index - $attributeStart).ToLowerInvariant()
+        while ($index -lt $Html.Length -and (Test-HtmlWhitespace $Html[$index])) { $index++ }
+        $attributeValue = ''
+        if ($index -lt $Html.Length -and $Html[$index] -eq '=') {
+            $index++
+            while ($index -lt $Html.Length -and (Test-HtmlWhitespace $Html[$index])) { $index++ }
+            if ($index -lt $Html.Length -and ($Html[$index] -eq [char]34 -or $Html[$index] -eq [char]39)) {
+                $quote = $Html[$index]
+                $index++
+                $valueStart = $index
+                while ($index -lt $Html.Length -and $Html[$index] -ne $quote) { $index++ }
+                $attributeValue = $Html.Substring($valueStart, $index - $valueStart)
+                if ($index -lt $Html.Length) { $index++ }
+            } else {
+                $valueStart = $index
+                while ($index -lt $Html.Length -and -not (Test-HtmlWhitespace $Html[$index]) -and $Html[$index] -ne '>') { $index++ }
+                $attributeValue = $Html.Substring($valueStart, $index - $valueStart)
+            }
+        }
+        if (-not $attributes.ContainsKey($attributeName)) { $attributes[$attributeName] = $attributeValue }
+    }
+
+    return [pscustomobject]@{
+        Name = $tagName
+        IsEndTag = $isEndTag
+        Attributes = $attributes
+        EndIndex = $index
+    }
+}
+
+function Get-HtmlScriptElements {
+    param([string]$Html)
+
+    $index = 0
+    $templateDepth = 0
+    while ($index -lt $Html.Length) {
+        if ($Html[$index] -ne '<') { $index++; continue }
+        if ($index + 3 -lt $Html.Length -and $Html.Substring($index, 4) -eq '<!--') {
+            $commentEnd = $Html.IndexOf('-->', $index + 4, [System.StringComparison]::Ordinal)
+            $index = if ($commentEnd -lt 0) { $Html.Length } else { $commentEnd + 3 }
+            continue
+        }
+
+        $tag = Read-HtmlTag -Html $Html -StartIndex $index
+        if (-not $tag) { $index++; continue }
+        $index = $tag.EndIndex
+        if ($tag.IsEndTag) {
+            if ($tag.Name -eq 'template' -and $templateDepth -gt 0) { $templateDepth-- }
+            continue
+        }
+        if ($tag.Name -eq 'template') {
+            $templateDepth++
+            continue
+        }
+        if ($tag.Name -ne 'script') { continue }
+
+        $bodyStart = $tag.EndIndex
+        $endTag = $null
+        $searchIndex = $bodyStart
+        while ($searchIndex -lt $Html.Length) {
+            $candidateIndex = $Html.IndexOf('</script', $searchIndex, [System.StringComparison]::OrdinalIgnoreCase)
+            if ($candidateIndex -lt 0) { break }
+            $afterName = $candidateIndex + 8
+            if ($afterName -ge $Html.Length -or (Test-HtmlWhitespace $Html[$afterName]) -or $Html[$afterName] -eq '/' -or $Html[$afterName] -eq '>') {
+                $candidateTag = Read-HtmlTag -Html $Html -StartIndex $candidateIndex
+                if ($candidateTag -and $candidateTag.IsEndTag -and $candidateTag.Name -eq 'script') {
+                    $endTag = $candidateTag
+                    break
+                }
+            }
+            $searchIndex = $candidateIndex + 2
+        }
+
+        $bodyEnd = if ($endTag) { $candidateIndex } else { $Html.Length }
+        if ($templateDepth -eq 0) {
+            [pscustomobject]@{
+                Attributes = $tag.Attributes
+                Body = $Html.Substring($bodyStart, $bodyEnd - $bodyStart)
+            }
+        }
+        $index = if ($endTag) { $endTag.EndIndex } else { $Html.Length }
+    }
+}
+
 function Get-ExecutableJavaScript {
     param([string]$Html)
 
     $result = New-Object System.Text.StringBuilder
-    foreach ($match in [regex]::Matches($Html, '(?is)<script\b(?<attributes>[^>]*)>(?<body>.*?)</script>')) {
-        $typeMatch = [regex]::Match($match.Groups['attributes'].Value, '(?i)\btype\s*=\s*(?:"(?<value>[^"]*)"|''(?<value>[^'']*)''|(?<value>[^\s>]+))')
-        $scriptType = if ($typeMatch.Success) { $typeMatch.Groups['value'].Value.Trim().ToLowerInvariant() } else { '' }
+    foreach ($script in @(Get-HtmlScriptElements -Html $Html)) {
+        $scriptType = if ($script.Attributes.ContainsKey('type')) { $script.Attributes['type'].Trim().ToLowerInvariant() } else { '' }
         if ($scriptType -and $scriptType -notin @('text/javascript', 'application/javascript', 'application/ecmascript', 'text/ecmascript', 'module')) { continue }
 
-        $body = $match.Groups['body'].Value
+        $body = $script.Body
         $state = 'code'
         $escaped = $false
         $stringValue = New-Object System.Text.StringBuilder
