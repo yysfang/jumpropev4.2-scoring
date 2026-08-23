@@ -1,0 +1,20 @@
+# 个人工作区与计分记录：仅保存在本机，不进入版本库
+.workbuddy/
+打分记录/
+.worktrees/
+
+# 编辑器与临时文件
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+*.tmp
+*.temp
+*.bak
+*.log
+
+# 操作系统生成的文件
+.DS_Store
+Thumbs.db
+Desktop.ini
