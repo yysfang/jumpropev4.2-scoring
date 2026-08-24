@@ -249,8 +249,20 @@ $requiredPatterns = @(
     'addEventListener\s*\(\s*__IJRU_CLICK__',
     'addEventListener\s*\(\s*__IJRU_INPUT__'
 )
+$forbiddenBrandText = @('IJRU', 'Championship Scoring System', '加入跳绳圈', '方泽伟 Richard', 'a17724605074')
+$requiredBrandPatterns = @(
+    '(?is)<title>\s*国际规则花样算分\s*</title>',
+    '(?is)<h1\b[^>]*>\s*国际规则花样算分\s*</h1>',
+    '(?is)<div\b[^>]*\bclass\s*=\s*["''][^"'']*\bsubtitle\b[^"'']*["''][^>]*>\s*V4\.2\s*</div>'
+)
 foreach ($htmlPath in $htmlPaths) {
     $content = Get-Content -LiteralPath $htmlPath -Raw
+    foreach ($forbiddenText in $forbiddenBrandText) {
+        if ($content.Contains($forbiddenText)) { Fail-Verification "Forbidden rebrand text found in: $htmlPath" }
+    }
+    foreach ($requiredBrandPattern in $requiredBrandPatterns) {
+        if ($content -notmatch $requiredBrandPattern) { Fail-Verification "Required rebrand text is missing from: $htmlPath" }
+    }
     $code = Get-ExecutableJavaScript $content
     foreach ($requiredPattern in $requiredPatterns) {
         if ($code -notmatch $requiredPattern) { Fail-Verification "Required event or core function is missing from: $htmlPath" }

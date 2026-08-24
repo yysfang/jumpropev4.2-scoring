@@ -1,6 +1,6 @@
-# IJRU Rules 计分系统
+# 国际规则花样算分
 
-这是一个基于 IJRU v4.2.0 规则的静态网页计分器。项目不需要安装依赖：用浏览器直接打开 HTML 文件即可使用；发布时将静态文件部署到网站托管服务即可。
+这是一个基于国际跳绳规则 v4.2.0 整理的个人维护、非官方静态网页计分工具。项目不需要安装依赖：用浏览器直接打开 HTML 文件即可使用；发布时将静态文件部署到网站托管服务即可。
 
 ## 文件角色
 
@@ -16,8 +16,8 @@
 
 ## 版本区别
 
-- 当前计分器的发布版本为 **v1.1**，计分规则版本为 **v4.2.0**。
-- 根目录的 `scoring-calculator.html` 是当前本地维护版本；`docs/index.html` 是与其对应的网站发布入口。准备发布 v1.1 的后续维护版本前，应先确认两个入口包含同一份准备上线的内容。
+- 当前计分器的发布版本为 **v1.2**，计分规则版本为 **v4.2.0**。
+- 根目录的 `scoring-calculator.html` 是当前本地维护版本；`docs/index.html` 是与其对应的网站发布入口。准备发布 v1.2 的后续维护版本前，应先确认两个入口包含同一份准备上线的内容。
 - `versions/scoring-calculator-v1.0.html` 和 `versions/scoring-calculator-v1.1.html` 是历史快照，不应当作日常编辑入口。
 - 规则资料标注为 v4.2.0；修改计分逻辑时先核对相应规则资料，再更新当前维护版本。
 
@@ -50,7 +50,7 @@ git rebase main
 三个本地维护脚本的安全接口如下：
 
 - `scripts/new-release.ps1 -Version <major.minor>`：例如 `.\scripts\new-release.ps1 -Version 1.2`。它会拒绝非法或已存在的版本，再用主文件更新 `docs/index.html` 并创建不覆盖的版本快照，最后自动验证。
-- `scripts/verify-project.ps1 -Version <major.minor>`：例如 `.\scripts\verify-project.ps1 -Version 1.1`。它检查三份 HTML、必需脚本与隐私路径；出现任何错误时返回非零状态。
+- `scripts/verify-project.ps1 -Version <major.minor>`：例如 `.\scripts\verify-project.ps1 -Version 1.2`。它检查三份 HTML、必需脚本、品牌文案与隐私路径；出现任何错误时返回非零状态。
 - `scripts/backup-repo.ps1 [-Destination <absolute path>]`：默认示例为 `.\scripts\backup-repo.ps1`；自定义时必须使用已存在的绝对目录，例如：
 
   ```powershell

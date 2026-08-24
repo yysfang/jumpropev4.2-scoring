@@ -65,6 +65,26 @@ Describe 'IJRU maintenance scripts' {
         (Invoke-ProjectScript $projectPath 'verify-project.ps1' @{ Version = '1.1' }).ExitCode | Should Be 0
     }
 
+    It 'rejects forbidden rebrand text in every matching current HTML copy' {
+        foreach ($forbiddenText in @('IJRU', 'Championship Scoring System', '加入跳绳圈', '方泽伟 Richard', 'a17724605074')) {
+            $projectPath = New-IsolatedProject
+            foreach ($relativePath in @('scoring-calculator.html', 'docs\index.html', 'versions\scoring-calculator-v1.1.html')) {
+                $htmlPath = Join-Path $projectPath $relativePath
+                Add-Content -LiteralPath $htmlPath -Value "<!-- $forbiddenText -->"
+            }
+
+            (Invoke-ProjectScript $projectPath 'verify-project.ps1' @{ Version = '1.1' }).ExitCode | Should Not Be 0
+        }
+    }
+
+    It 'verifies a clean v1.2 release' {
+        $projectPath = New-IsolatedProject
+        $result = Invoke-ProjectScript $projectPath 'new-release.ps1' @{ Version = '1.2' }
+
+        $result.ExitCode | Should Be 0
+        (Invoke-ProjectScript $projectPath 'verify-project.ps1' @{ Version = '1.2' }).ExitCode | Should Be 0
+    }
+
     It 'rejects mismatched published HTML' {
         $projectPath = New-IsolatedProject
         Add-Content -LiteralPath (Join-Path $projectPath 'docs\index.html') -Value '<!-- mismatch -->'
