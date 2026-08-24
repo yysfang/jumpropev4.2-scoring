@@ -10,6 +10,7 @@ function New-IsolatedProject {
         $sourcePath = Join-Path $script:ProjectTemplatePath 'scoring-calculator.html'
         Copy-Item -LiteralPath (Join-Path $RepositoryRoot 'scoring-calculator.html') -Destination $sourcePath
         Copy-Item -LiteralPath $sourcePath -Destination (Join-Path $script:ProjectTemplatePath 'docs\index.html')
+        Copy-Item -LiteralPath (Join-Path $RepositoryRoot 'versions\scoring-calculator-v1.0.html') -Destination (Join-Path $script:ProjectTemplatePath 'versions\scoring-calculator-v1.0.html')
         Copy-Item -LiteralPath $sourcePath -Destination (Join-Path $script:ProjectTemplatePath 'versions\scoring-calculator-v1.1.html')
         Set-Content -LiteralPath (Join-Path $script:ProjectTemplatePath '.gitignore') -Value ".workbuddy/`n打分记录/`n.worktrees/"
         foreach ($name in 'new-release.ps1', 'verify-project.ps1', 'backup-repo.ps1') {
@@ -65,7 +66,19 @@ Describe 'IJRU maintenance scripts' {
         (Invoke-ProjectScript $projectPath 'verify-project.ps1' @{ Version = '1.1' }).ExitCode | Should Be 0
     }
 
-    It 'rejects forbidden rebrand text in every matching current HTML copy' {
+    It 'rejects forbidden rebrand text in each project HTML file independently' {
+        $projectPath = New-IsolatedProject
+        $htmlPaths = @(Get-ChildItem -LiteralPath $projectPath -Recurse -File -Filter '*.html')
+
+        foreach ($htmlPath in $htmlPaths) {
+            Add-Content -LiteralPath $htmlPath.FullName -Value '<!-- IJRU -->'
+            $result = Invoke-ProjectScript $projectPath 'verify-project.ps1' @{ Version = '1.1' }
+            $result.ExitCode | Should Not Be 0
+            git -C $projectPath restore -- $htmlPath.FullName
+        }
+    }
+
+    It 'rejects forbidden rebrand text in synchronized active HTML copies' {
         foreach ($forbiddenText in @('IJRU', 'Championship Scoring System', '加入跳绳圈', '方泽伟 Richard', 'a17724605074')) {
             $projectPath = New-IsolatedProject
             foreach ($relativePath in @('scoring-calculator.html', 'docs\index.html', 'versions\scoring-calculator-v1.1.html')) {
@@ -75,6 +88,15 @@ Describe 'IJRU maintenance scripts' {
 
             (Invoke-ProjectScript $projectPath 'verify-project.ps1' @{ Version = '1.1' }).ExitCode | Should Not Be 0
         }
+    }
+
+    It 'rejects forbidden rebrand text in a future version snapshot' {
+        $projectPath = New-IsolatedProject
+        $futureSnapshotPath = Join-Path $projectPath 'versions\scoring-calculator-v9.9.html'
+        Copy-Item -LiteralPath (Join-Path $projectPath 'scoring-calculator.html') -Destination $futureSnapshotPath
+        Add-Content -LiteralPath $futureSnapshotPath -Value '<!-- IJRU -->'
+
+        (Invoke-ProjectScript $projectPath 'verify-project.ps1' @{ Version = '1.1' }).ExitCode | Should Not Be 0
     }
 
     It 'verifies a clean v1.2 release' {
