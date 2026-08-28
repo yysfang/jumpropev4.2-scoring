@@ -223,6 +223,85 @@ function Get-ExecutableJavaScript {
     return $result.ToString()
 }
 
+function Test-HtmlElementHidden {
+    param([hashtable]$Attributes)
+
+    if ($Attributes.ContainsKey('hidden') -or $Attributes.ContainsKey('disabled') -or $Attributes.ContainsKey('inert')) { return $true }
+    if ($Attributes.ContainsKey('aria-hidden') -and $Attributes['aria-hidden'].Trim().ToLowerInvariant() -eq 'true') { return $true }
+    if (-not $Attributes.ContainsKey('style')) { return $false }
+    return $Attributes['style'] -match '(?i)(?:^|;)\s*(?:display\s*:\s*none|visibility\s*:\s*hidden)\b'
+}
+
+function Get-HtmlTextContent {
+    param([string]$Html)
+
+    $withoutComments = [regex]::Replace($Html, '(?s)<!--.*?-->', '')
+    $withoutTags = [regex]::Replace($withoutComments, '(?s)<[^>]*>', '')
+    return ([System.Net.WebUtility]::HtmlDecode($withoutTags) -replace '\s+', ' ').Trim()
+}
+
+function Get-LiveHtmlElements {
+    param([string]$Html)
+
+    $index = 0
+    $elementStack = New-Object System.Collections.ArrayList
+    $voidElements = @('area', 'base', 'br', 'col', 'embed', 'hr', 'img', 'input', 'link', 'meta', 'param', 'source', 'track', 'wbr')
+    $rawTextElements = @('script', 'style', 'xmp', 'iframe', 'noembed', 'noframes', 'textarea', 'plaintext', 'noscript')
+
+    while ($index -lt $Html.Length) {
+        if ($Html[$index] -ne '<') { $index++; continue }
+        if ($index + 3 -lt $Html.Length -and $Html.Substring($index, 4) -eq '<!--') {
+            $commentEnd = $Html.IndexOf('-->', $index + 4, [System.StringComparison]::Ordinal)
+            $index = if ($commentEnd -lt 0) { $Html.Length } else { $commentEnd + 3 }
+            continue
+        }
+
+        $tagStart = $index
+        $tag = Read-HtmlTag -Html $Html -StartIndex $index
+        if (-not $tag) { $index++; continue }
+        $index = $tag.EndIndex
+
+        if ($tag.IsEndTag) {
+            for ($stackIndex = $elementStack.Count - 1; $stackIndex -ge 0; $stackIndex--) {
+                if ($elementStack[$stackIndex].Name -eq $tag.Name) {
+                    $elementStack.RemoveRange($stackIndex, $elementStack.Count - $stackIndex)
+                    break
+                }
+            }
+            continue
+        }
+
+        $ancestorHidden = @($elementStack | Where-Object { $_.Hidden }).Count -gt 0
+        $isHidden = $ancestorHidden -or $tag.Name -in @('template', 'noscript') -or (Test-HtmlElementHidden $tag.Attributes)
+        $endTag = Find-HtmlEndTag -Html $Html -StartIndex $tag.EndIndex -TagName $tag.Name
+        if (-not $isHidden -and $tag.Name -in @('title', 'h1', 'div')) {
+            $bodyEnd = if ($endTag) { $endTag.StartIndex } else { $Html.Length }
+            [pscustomobject]@{
+                Name = $tag.Name
+                Attributes = $tag.Attributes
+                Text = Get-HtmlTextContent $Html.Substring($tag.EndIndex, $bodyEnd - $tag.EndIndex)
+            }
+        }
+
+        if ($tag.Name -in $rawTextElements) {
+            $index = if ($endTag) { $endTag.Tag.EndIndex } else { $Html.Length }
+            continue
+        }
+
+        $tagSource = $Html.Substring($tagStart, $tag.EndIndex - $tagStart)
+        if ($tag.Name -notin $voidElements -and $tagSource -notmatch '/\s*>$') {
+            [void]$elementStack.Add([pscustomobject]@{ Name = $tag.Name; Hidden = $isHidden })
+        }
+    }
+}
+
+function Test-HtmlClassToken {
+    param([hashtable]$Attributes, [string]$Token)
+
+    if (-not $Attributes.ContainsKey('class')) { return $false }
+    return $Attributes['class'].Split(@(' ', "`t", "`r", "`n"), [System.StringSplitOptions]::RemoveEmptyEntries) -contains $Token
+}
+
 if ($Version -notmatch '^[0-9]+\.[0-9]+$') { Fail-Verification "Version must use major.minor format: $Version" }
 
 $gitRepositoryRoot = Split-Path -LiteralPath $PSScriptRoot
@@ -236,8 +315,14 @@ foreach ($htmlPath in $htmlPaths) {
 }
 
 $forbiddenBrandText = @('IJRU', 'Championship Scoring System', '加入跳绳圈', '方泽伟 Richard', 'a17724605074')
-$allProjectHtmlPaths = @(Get-ChildItem -LiteralPath $repositoryRoot -Recurse -File -Filter '*.html' | Select-Object -ExpandProperty FullName)
+Push-Location -LiteralPath $gitRepositoryRoot
+try {
+    $allProjectHtmlFiles = @(git -c core.quotepath=false ls-files --cached --others --exclude-standard -- '*.html')
+    if ($LASTEXITCODE -ne 0) { Fail-Verification 'Unable to enumerate project HTML files.' }
+} finally { Pop-Location }
+$allProjectHtmlPaths = @($allProjectHtmlFiles | Where-Object { $_ } | ForEach-Object { Join-Path $repositoryRoot $_ })
 foreach ($htmlPath in $allProjectHtmlPaths) {
+    if (-not (Test-Path -LiteralPath $htmlPath -PathType Leaf)) { Fail-Verification "Project HTML file is missing: $htmlPath" }
     $content = Get-Content -LiteralPath $htmlPath -Raw
     foreach ($forbiddenText in $forbiddenBrandText) {
         if ($content.Contains($forbiddenText)) { Fail-Verification "Forbidden rebrand text found in: $htmlPath" }
@@ -258,16 +343,15 @@ $requiredPatterns = @(
     'addEventListener\s*\(\s*__IJRU_CLICK__',
     'addEventListener\s*\(\s*__IJRU_INPUT__'
 )
-$requiredBrandPatterns = @(
-    '(?is)<title>\s*国际规则花样算分\s*</title>',
-    '(?is)<h1\b[^>]*>\s*国际规则花样算分\s*</h1>',
-    '(?is)<div\b[^>]*\bclass\s*=\s*["''][^"'']*\bsubtitle\b[^"'']*["''][^>]*>\s*V4\.2\s*</div>'
-)
 foreach ($htmlPath in $htmlPaths) {
     $content = Get-Content -LiteralPath $htmlPath -Raw
-    foreach ($requiredBrandPattern in $requiredBrandPatterns) {
-        if ($content -notmatch $requiredBrandPattern) { Fail-Verification "Required rebrand text is missing from: $htmlPath" }
-    }
+    $liveElements = @(Get-LiveHtmlElements -Html $content)
+    $liveTitles = @($liveElements | Where-Object { $_.Name -eq 'title' })
+    $liveHeadings = @($liveElements | Where-Object { $_.Name -eq 'h1' })
+    $liveSubtitles = @($liveElements | Where-Object { $_.Name -eq 'div' -and (Test-HtmlClassToken $_.Attributes 'subtitle') })
+    if ($liveTitles.Count -ne 1 -or $liveTitles[0].Text -ne '国际规则花样算分') { Fail-Verification "Required live title is missing or not unique in: $htmlPath" }
+    if ($liveHeadings.Count -ne 1 -or $liveHeadings[0].Text -ne '国际规则花样算分') { Fail-Verification "Required live heading is missing or not unique in: $htmlPath" }
+    if ($liveSubtitles.Count -ne 1 -or $liveSubtitles[0].Text -ne 'V4.2') { Fail-Verification "Required live subtitle is missing or not unique in: $htmlPath" }
     $code = Get-ExecutableJavaScript $content
     foreach ($requiredPattern in $requiredPatterns) {
         if ($code -notmatch $requiredPattern) { Fail-Verification "Required event or core function is missing from: $htmlPath" }

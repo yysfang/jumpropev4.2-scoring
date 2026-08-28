@@ -4,7 +4,7 @@ $RepositoryRoot = Split-Path -LiteralPath $PSScriptRoot
 function New-IsolatedProject {
     param([switch]$WithCommit)
     $projectPath = Join-Path -Path $TestDrive -ChildPath ("ijru-" + [guid]::NewGuid().ToString('N'))
-    if (-not $script:ProjectTemplatePath) {
+    if (-not $script:ProjectTemplatePath -or -not (Test-Path -LiteralPath $script:ProjectTemplatePath -PathType Container)) {
         $script:ProjectTemplatePath = Join-Path -Path $TestDrive -ChildPath 'ijru-template'
         New-Item -ItemType Directory -Path $script:ProjectTemplatePath, (Join-Path $script:ProjectTemplatePath 'scripts'), (Join-Path $script:ProjectTemplatePath 'docs'), (Join-Path $script:ProjectTemplatePath 'versions') -Force | Out-Null
         $sourcePath = Join-Path $script:ProjectTemplatePath 'scoring-calculator.html'
@@ -60,7 +60,7 @@ function Add-PrivacyHistory {
     } finally { Pop-Location }
 }
 
-Describe 'IJRU maintenance scripts' {
+Describe 'IJRU maintenance scripts — rebrand and verifier' {
     It 'verifies matching complete HTML copies' {
         $projectPath = New-IsolatedProject
         (Invoke-ProjectScript $projectPath 'verify-project.ps1' @{ Version = '1.1' }).ExitCode | Should Be 0
@@ -99,6 +99,54 @@ Describe 'IJRU maintenance scripts' {
         (Invoke-ProjectScript $projectPath 'verify-project.ps1' @{ Version = '1.1' }).ExitCode | Should Not Be 0
     }
 
+    It 'ignores forbidden HTML in each private directory' {
+        foreach ($privacyDirectory in @('.workbuddy', '打分记录', '.worktrees')) {
+            $projectPath = New-IsolatedProject
+            $privateHtmlPath = Join-Path $projectPath (Join-Path $privacyDirectory 'private.html')
+            New-Item -ItemType Directory -Path (Split-Path -LiteralPath $privateHtmlPath) -Force | Out-Null
+            Set-Content -LiteralPath $privateHtmlPath -Value '<!-- IJRU -->'
+
+            (Invoke-ProjectScript $projectPath 'verify-project.ps1' @{ Version = '1.1' }).ExitCode | Should Be 0
+        }
+    }
+
+    It 'rejects forbidden HTML in a non-ignored untracked project file' {
+        $projectPath = New-IsolatedProject
+        Set-Content -LiteralPath (Join-Path $projectPath 'untracked.html') -Value '<!-- IJRU -->'
+
+        (Invoke-ProjectScript $projectPath 'verify-project.ps1' @{ Version = '1.1' }).ExitCode | Should Not Be 0
+    }
+
+    It 'rejects a wrong live title with the expected title only in a comment' {
+        $projectPath = New-IsolatedProject
+        $sourcePath = Join-Path $projectPath 'scoring-calculator.html'
+        $content = (Get-Content -LiteralPath $sourcePath -Raw) -replace '<title>国际规则花样算分</title>', '<title>错误标题</title><!-- <title>国际规则花样算分</title> -->'
+        Set-Content -LiteralPath $sourcePath -Value $content
+        Sync-ProjectHtml $projectPath
+
+        (Invoke-ProjectScript $projectPath 'verify-project.ps1' @{ Version = '1.1' }).ExitCode | Should Not Be 0
+    }
+
+    It 'rejects a wrong live heading with the expected heading only in a template' {
+        $projectPath = New-IsolatedProject
+        $sourcePath = Join-Path $projectPath 'scoring-calculator.html'
+        $content = (Get-Content -LiteralPath $sourcePath -Raw) -replace '<h1>国际规则花样算分</h1>', '<h1>错误标题</h1><template><h1>国际规则花样算分</h1></template>'
+        Set-Content -LiteralPath $sourcePath -Value $content
+        Sync-ProjectHtml $projectPath
+
+        (Invoke-ProjectScript $projectPath 'verify-project.ps1' @{ Version = '1.1' }).ExitCode | Should Not Be 0
+    }
+
+    It 'rejects a wrong live subtitle with the expected subtitle only in a hidden decoy' {
+        $projectPath = New-IsolatedProject
+        $sourcePath = Join-Path $projectPath 'scoring-calculator.html'
+        $content = (Get-Content -LiteralPath $sourcePath -Raw) -replace '<div class="subtitle">V4.2</div>', '<div class="subtitle">错误副标题</div><div class="subtitle" style="display:none">V4.2</div>'
+        Set-Content -LiteralPath $sourcePath -Value $content
+        Sync-ProjectHtml $projectPath
+
+        (Invoke-ProjectScript $projectPath 'verify-project.ps1' @{ Version = '1.1' }).ExitCode | Should Not Be 0
+    }
+
     It 'verifies a clean v1.2 release' {
         $projectPath = New-IsolatedProject
         $result = Invoke-ProjectScript $projectPath 'new-release.ps1' @{ Version = '1.2' }
@@ -107,6 +155,9 @@ Describe 'IJRU maintenance scripts' {
         (Invoke-ProjectScript $projectPath 'verify-project.ps1' @{ Version = '1.2' }).ExitCode | Should Be 0
     }
 
+}
+
+Describe 'IJRU maintenance scripts — parser guards' {
     It 'rejects mismatched published HTML' {
         $projectPath = New-IsolatedProject
         Add-Content -LiteralPath (Join-Path $projectPath 'docs\index.html') -Value '<!-- mismatch -->'
@@ -363,6 +414,9 @@ function calculate(
         (Invoke-ProjectScript $projectPath 'verify-project.ps1' @{ Version = '1.1' }).ExitCode | Should Not Be 0
     }
 
+}
+
+Describe 'IJRU maintenance scripts — release and backup' {
     It 'does not allow IJRU_VERIFY_CONTENT_ROOT to bypass a real release-page mismatch' {
         $projectPath = New-IsolatedProject
         $alternateRoot = Join-Path $TestDrive ("alternate-content-" + [guid]::NewGuid().ToString('N'))
