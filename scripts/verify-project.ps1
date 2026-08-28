@@ -227,7 +227,8 @@ function Test-HtmlElementHidden {
     param([hashtable]$Attributes)
 
     if ($Attributes.ContainsKey('hidden') -or $Attributes.ContainsKey('disabled') -or $Attributes.ContainsKey('inert')) { return $true }
-    if ($Attributes.ContainsKey('aria-hidden') -and $Attributes['aria-hidden'].Trim().ToLowerInvariant() -eq 'true') { return $true }
+    if (Test-HtmlClassToken $Attributes 'hidden') { return $true }
+    if ($Attributes.ContainsKey('aria-hidden') -and [System.Net.WebUtility]::HtmlDecode($Attributes['aria-hidden']).Trim().ToLowerInvariant() -eq 'true') { return $true }
     if (-not $Attributes.ContainsKey('style')) { return $false }
     return $Attributes['style'] -match '(?i)(?:^|;)\s*(?:display\s*:\s*none|visibility\s*:\s*hidden)\b'
 }
@@ -299,7 +300,7 @@ function Test-HtmlClassToken {
     param([hashtable]$Attributes, [string]$Token)
 
     if (-not $Attributes.ContainsKey('class')) { return $false }
-    return $Attributes['class'].Split(@(' ', "`t", "`r", "`n"), [System.StringSplitOptions]::RemoveEmptyEntries) -contains $Token
+    return @($Attributes['class'] -split '[\t\n\f\r ]+' | Where-Object { $_ }) -contains $Token
 }
 
 if ($Version -notmatch '^[0-9]+\.[0-9]+$') { Fail-Verification "Version must use major.minor format: $Version" }

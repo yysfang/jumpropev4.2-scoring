@@ -147,6 +147,26 @@ Describe 'IJRU maintenance scripts — rebrand and verifier' {
         (Invoke-ProjectScript $projectPath 'verify-project.ps1' @{ Version = '1.1' }).ExitCode | Should Not Be 0
     }
 
+    It 'rejects a required heading that exists only in the page hidden class' {
+        $projectPath = New-IsolatedProject
+        $sourcePath = Join-Path $projectPath 'scoring-calculator.html'
+        $content = (Get-Content -LiteralPath $sourcePath -Raw) -replace '<h1>国际规则花样算分</h1>', '<h1 class="hidden">国际规则花样算分</h1>'
+        Set-Content -LiteralPath $sourcePath -Value $content
+        Sync-ProjectHtml $projectPath
+
+        (Invoke-ProjectScript $projectPath 'verify-project.ps1' @{ Version = '1.1' }).ExitCode | Should Not Be 0
+    }
+
+    It 'rejects a required heading hidden by an entity-encoded aria-hidden value' {
+        $projectPath = New-IsolatedProject
+        $sourcePath = Join-Path $projectPath 'scoring-calculator.html'
+        $content = (Get-Content -LiteralPath $sourcePath -Raw) -replace '<h1>国际规则花样算分</h1>', "<h1 aria-hidden='&#116;rue'>国际规则花样算分</h1>"
+        Set-Content -LiteralPath $sourcePath -Value $content
+        Sync-ProjectHtml $projectPath
+
+        (Invoke-ProjectScript $projectPath 'verify-project.ps1' @{ Version = '1.1' }).ExitCode | Should Not Be 0
+    }
+
     It 'verifies a clean v1.2 release' {
         $projectPath = New-IsolatedProject
         $result = Invoke-ProjectScript $projectPath 'new-release.ps1' @{ Version = '1.2' }
